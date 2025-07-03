@@ -31,9 +31,14 @@ No dependencies or runtimes are required.
 
 ### Usage
 
-The primary command is `scan`. It takes a single argument: the path to the directory you want to analyze.
+The CLI is simple and straightforward. You can get help for any command by adding `--help`.
 
 ```bash
+# Get the application's version
+codetag --version
+
+# --- The 'scan' command ---
+
 # Analyze the current directory and print the report to the console
 codetag scan .
 
@@ -45,6 +50,17 @@ codetag scan . -o report.json
 
 # Include hidden files and directories (like .git) in the analysis
 codetag scan . -i
+
+# --- The 'pack' command (Pro Feature) ---
+
+# Pack a project and save the output to a text file
+codetag pack /path/to/my-project -o context.txt
+
+# Customize the packing by changing the max file size (e.g., 200 KB)
+codetag pack . -o context.txt --max-file-size-kb 200
+
+# Customize which extensions to exclude
+codetag pack . -o context.txt --exclude-extensions ".md,.log"
 ```
 
 ### Packing Source for AI Context
