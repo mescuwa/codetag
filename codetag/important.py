@@ -27,21 +27,46 @@ __all__ = ["find_key_files"]
 # ---------------------------------------------------------------------------
 
 def _load_rules() -> Dict[str, List[str]]:
-    """Load detection rules from *rules.yaml* located next to this file."""
+    """Load detection rules from *rules.yaml* bundled with this module.
 
-    rules_path = Path(__file__).with_name("rules.yaml")
+    When running as normal Python code, the file sits next to *important.py* 🐍.
+    Inside a PyInstaller-built executable the module is extracted into a
+    temporary directory and `__file__` points there – but the data file may be
+    located inside the application bundle.  Using ``importlib.resources`` takes
+    care of both scenarios.
+    """
+
     try:
-        with rules_path.open("r", encoding="utf-8") as fp:
-            data = yaml.safe_load(fp) or {}
-            # Normalise all rule lists to lower-cased strings for case-insensitive
-            # comparison later.
-            for key in ("important_filenames", "important_suffixes", "important_substrings"):
-                if key in data and isinstance(data[key], list):
-                    data[key] = [str(item).lower() for item in data[key]]
-            return data
-    except (OSError, yaml.YAMLError):
-        # Fallback to empty rule-set when file missing/corrupt.
-        return {}
+        # Python ≥3.9 – *files* returns a Traversable object we can navigate.
+        from importlib import resources as importlib_resources  # type: ignore
+
+        if hasattr(importlib_resources, "files"):
+            rules_text = (importlib_resources.files(__package__)  # type: ignore[arg-type]
+                          / "rules.yaml").read_text("utf-8")
+        else:  # pragma: no cover – fallback for Python <3.9 (unlikely here)
+            with importlib_resources.open_text(__package__, "rules.yaml", encoding="utf-8") as fp:  # type: ignore[arg-type]
+                rules_text = fp.read()
+
+        data = yaml.safe_load(rules_text) or {}
+    except (FileNotFoundError, OSError, ImportError, yaml.YAMLError):
+        # Fall back to classic path-based loading – may still work in non-frozen
+        # environments or when importlib.resources is unavailable.
+        try:
+            rules_path = Path(__file__).with_name("rules.yaml")
+            with rules_path.open("r", encoding="utf-8") as fp:
+                data = yaml.safe_load(fp) or {}
+        except (OSError, yaml.YAMLError):
+            return {}
+
+    # ---------------------------------------------------------------------
+    # Normalise all rule lists to lower-cased strings for case-insensitive
+    # comparison later on.
+    # ---------------------------------------------------------------------
+    for key in ("important_filenames", "important_suffixes", "important_substrings"):
+        if key in data and isinstance(data[key], list):
+            data[key] = [str(item).lower() for item in data[key]]
+
+    return data
 
 
 # ---------------------------------------------------------------------------
@@ -50,28 +75,14 @@ def _load_rules() -> Dict[str, List[str]]:
 
 def find_key_files(
     file_paths: List[Path],
+    root_path: Path,
     *,
     top_n: int = 5,
-    root_dir: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Return the *top_n* largest files and a list of important files.
 
-    Parameters
-    ----------
-    file_paths
-        All files within the repository.
-    top_n
-        Number of largest files to include.
-    root_dir
-        Base directory for relative paths.  Defaults to the common path of
-        *file_paths* or the current working directory if indeterminable.
+    *root_path* is used to produce relative paths for reporting.
     """
-
-    if root_dir is None:
-        try:
-            root_dir = Path(os.path.commonpath([str(p) for p in file_paths]))
-        except ValueError:
-            root_dir = Path.cwd()
 
     rules = _load_rules()
     important_filenames: Set[str] = set(rules.get("important_filenames", []))
@@ -90,7 +101,7 @@ def find_key_files(
     largest_files_report: List[Dict[str, Any]] = []
     for size, path in file_size_pairs[:max(0, top_n)]:
         try:
-            rel_path = str(path.relative_to(root_dir))
+            rel_path = str(path.relative_to(root_path))
         except ValueError:
             rel_path = str(path)
         largest_files_report.append({"path": rel_path, "size_bytes": size})
@@ -103,7 +114,7 @@ def find_key_files(
 
         rel: str
         try:
-            rel = str(p.relative_to(root_dir))
+            rel = str(p.relative_to(root_path))
         except ValueError:
             rel = str(p)
 

@@ -1,0 +1,1498 @@
+--- FILE: codetag/__init__.py ---
+"""Top-level package for CodeTag."""
+
+__all__ = ["build_fs_tree", "__version__"]
+__version__ = "0.1.0"
+
+from .fs_tree import build_fs_tree 
+
+--- FILE: codetag/cli.py ---
+# """Command-line interface for CodeTag with structured JSON output."""
+
+import json
+import time
+from pathlib import Path
+from typing import List, Dict, Optional
+
+import typer
+from pydantic import BaseModel, Field
+
+from .fs_tree import build_fs_tree, FsNode
+from .language_stats import analyze_file_stats, FileStats
+from .todos import scan_for_todos
+from .important import find_key_files
+from .licensing import activate_license, validate_license
+
+__version__ = "1.0.0"
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
+
+class LargestFile(BaseModel):
+    path: str
+    size_bytes: int
+
+
+class AnalysisMetadata(BaseModel):
+    report_version: str = "1.0"
+    timestamp: str = Field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ"))
+    analysis_duration_seconds: float
+
+
+class RepositorySummary(BaseModel):
+    total_files: int = 0
+    total_lines_of_code: int = 0
+    primary_language: Optional[str] = None
+    language_stats: Dict[str, int] = Field(default_factory=dict)
+
+
+class KeyFiles(BaseModel):
+    largest_files: List[LargestFile] = Field(default_factory=list)
+    important_files_detected: List[str] = Field(default_factory=list)
+
+
+class CodeInsights(BaseModel):
+    todo_count: int = 0
+    fixme_count: int = 0
+
+
+class AnalysisReport(BaseModel):
+    analysis_metadata: AnalysisMetadata
+    repository_summary: RepositorySummary
+    directory_tree: List[FsNode]
+    key_files: KeyFiles = Field(default_factory=KeyFiles)
+    code_insights: CodeInsights = Field(default_factory=CodeInsights)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_all_files_from_tree(nodes: List[FsNode], prefix: Path) -> List[Path]:
+    """Flatten *nodes* into a list of file paths under *prefix*."""
+
+    files: List[Path] = []
+    for node in nodes:
+        current = prefix / node["name"]
+        if node["type"] == "file":
+            files.append(current)
+        elif node["type"] == "directory" and node["children"] is not None:
+            files.extend(_get_all_files_from_tree(node["children"], current))
+    return files
+
+
+# ---------------------------------------------------------------------------
+# CLI application
+# ---------------------------------------------------------------------------
+
+def version_callback(value: bool):
+    if value:
+        typer.echo(f"CodeTag Version: {__version__}")
+        raise typer.Exit()
+
+app = typer.Typer(
+    help="CodeTag: Quickly understand a codebase via a JSON report.",
+    context_settings={"help_option_names": ["-h", "--help"]},
+    add_completion=False,
+)
+
+# --- root callback to expose global --version flag ---
+
+@app.callback()
+def main(
+    version: Optional[bool] = typer.Option(
+        None,
+        "--version",
+        "-v",
+        help="Show the application's version and exit.",
+        callback=version_callback,
+        is_eager=True,
+    )
+):
+    """CodeTag: Quickly understand a codebase via a JSON report."""
+    pass
+
+
+@app.command()
+def activate(
+    key: str = typer.Argument(..., help="Your purchased license key."),
+    email: str = typer.Argument(..., help="The email used during purchase."),
+):
+    """Activate a CodeTag Pro license."""
+
+    activate_license(key, email)
+
+
+@app.command(name="scan")
+def scan_repository(
+    path: Path = typer.Argument(..., exists=True, resolve_path=True, help="Directory to analyze."),
+    include_hidden: bool = typer.Option(False, "-i", "--include-hidden", help="Include hidden files."),
+    output_file: Optional[Path] = typer.Option(None, "-o", "--output", help="Save the JSON report here."),
+):
+    """Analyze *path* and produce a JSON summary on stdout or *output_file*."""
+
+    license_data = validate_license()
+    if license_data:
+        typer.echo("✅ Pro license active.", err=True)
+    else:
+        typer.echo(
+            "ℹ️  Running in community mode. Activate a license for full features.",
+            err=True,
+        )
+
+    start = time.time()
+    typer.echo(f"🔍 Analyzing repository at: {path}", err=True)
+
+    # 1. Build directory tree & derive file list
+    tree = build_fs_tree(path, include_hidden=include_hidden)
+    all_files = _get_all_files_from_tree(tree, path)
+
+    # 2. Repository summary – language stats
+    repo_summary = RepositorySummary(total_files=len(all_files))
+    lang_loc: Dict[str, int] = {}
+    for f in all_files:
+        stats: Optional[FileStats] = analyze_file_stats(f)
+        if stats:
+            lang_loc[stats.language] = lang_loc.get(stats.language, 0) + stats.code
+    repo_summary.language_stats = lang_loc
+    repo_summary.total_lines_of_code = sum(lang_loc.values())
+    if lang_loc:
+        repo_summary.primary_language = max(lang_loc, key=lang_loc.get)
+
+    # 3. TODO / FIXME detection
+    todo_res = scan_for_todos(all_files)
+    code_insights = CodeInsights(**todo_res)
+
+    # 4. Key files (largest + heuristics)
+    key_files_res = find_key_files(all_files, path, top_n=10)
+    key_files = KeyFiles(**key_files_res)
+
+    # 5. Assemble report
+    metadata = AnalysisMetadata(analysis_duration_seconds=round(time.time() - start, 2))
+    report = AnalysisReport(
+        analysis_metadata=metadata,
+        repository_summary=repo_summary,
+        directory_tree=tree,
+        key_files=key_files,
+        code_insights=code_insights,
+    )
+
+    out_json = report.model_dump_json(indent=2)
+    if output_file:
+        output_file.write_text(out_json)
+        typer.echo(f"✅ Report saved to: {output_file}", err=True)
+    else:
+        print(out_json)
+
+
+# ---------------------------------------------------------------------------
+# pack command
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def pack(
+    path: Path = typer.Argument(..., exists=True, resolve_path=True, help="Path to the project directory."),
+    output_file: Path = typer.Option(..., "-o", "--output", help="Path to save the packed text file."),
+    max_file_size_kb: int = typer.Option(100, help="Maximum size (in KB) of a single file to include."),
+    exclude_extensions: str = typer.Option(
+        ".lock,.json,.map,.min.js",
+        help="Comma-separated list of file extensions to exclude (include the leading dot).",
+    ),
+):
+    """Pack source code into a single plaintext file for easy AI consumption *(Pro feature)*.
+
+    The packing process respects `.gitignore` rules via :pyfunc:`build_fs_tree`,
+    skips files exceeding *max_file_size_kb*, and excludes any file whose suffix
+    matches one of *exclude_extensions*.
+    """
+
+    # -------------------------------------------------------------------
+    # License gating – only available to Pro users
+    # -------------------------------------------------------------------
+
+    license_data = validate_license()
+    if not license_data:
+        typer.echo("❌ ERROR: The 'pack' command is a Pro feature.", err=True)
+        typer.echo(
+            "Please activate a license to use it: codetag activate <key> <email>",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    typer.echo("✅ Pro license active. Starting pack operation.", err=True)
+
+    start_time = time.time()
+    typer.echo(f"📦 Packing repository at: {path}", err=True)
+
+    # 1. Build directory tree & derive list of candidate files
+    tree = build_fs_tree(path, include_hidden=False)
+    all_files = _get_all_files_from_tree(tree, path)
+
+    # 2. Parse extension blacklist
+    blacklist = {
+        ext.strip().lower() if ext.strip().startswith(".") else f".{ext.strip().lower()}"
+        for ext in exclude_extensions.split(",")
+        if ext.strip()
+    }
+
+    max_bytes = max_file_size_kb * 1024
+
+    included_files: List[Path] = []
+    for f in all_files:
+        # Extension filter
+        if f.suffix.lower() in blacklist:
+            continue
+
+        # Size filter (ignore errors when stat fails)
+        try:
+            if f.stat().st_size > max_bytes:
+                continue
+        except (OSError, FileNotFoundError):
+            continue
+
+        included_files.append(f)
+
+    if not included_files:
+        typer.echo("⚠️  No files matched the given criteria. Nothing to pack.", err=True)
+        raise typer.Exit(code=1)
+
+    # Ensure output directory exists
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with output_file.open("w", encoding="utf-8", errors="replace") as out_fp:
+        for f in included_files:
+            rel = f.relative_to(path)
+            out_fp.write(f"--- FILE: {rel} ---\n")
+            try:
+                content = f.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                # If reading fails, skip the file but note it in the output
+                out_fp.write("[Error reading file]\n\n")
+                continue
+            out_fp.write(content)
+            if not content.endswith("\n"):
+                out_fp.write("\n")
+            # Add an extra newline to separate files
+            out_fp.write("\n")
+
+    duration = round(time.time() - start_time, 2)
+    typer.echo(
+        f"✅ Packed {len(included_files)} files into {output_file} in {duration}s.",
+        err=True,
+    )
+
+
+if __name__ == "__main__":  # pragma: no cover
+    app() 
+
+--- FILE: codetag/fs_tree.py ---
+import os
+from pathlib import Path
+from typing import List, Optional, TypedDict
+
+from gitignore_parser import parse_gitignore
+
+# Directories that are always skipped regardless of .gitignore
+DEFAULT_IGNORES = {"node_modules", ".git", "__pycache__"}
+
+__all__ = ["build_fs_tree", "FsNode"]
+
+
+class FsNode(TypedDict):
+    """Dictionary describing a single file or directory in the tree."""
+
+    name: str
+    type: str  # "file" | "directory"
+    size_bytes: int
+    children: Optional[List["FsNode"]]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _compile_ignore(root: Path):
+    """Return a callable that determines whether *rel_path* should be ignored."""
+
+    gitignore = root / ".gitignore"
+    if gitignore.is_file():
+        try:
+            return parse_gitignore(str(gitignore))
+        except OSError:
+            pass
+    # Fallback – do not ignore anything
+    return lambda _p: False  # type: ignore[return-value]
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def build_fs_tree(root_path: Path, include_hidden: bool = False) -> List[FsNode]:
+    """Return a nested directory tree rooted at *root_path*.
+
+    *include_hidden* controls whether dot‐prefixed files/dirs are considered.
+    The implementation prunes ignored directories **before** `os.walk` descends
+    into them so we never pay the cost of scanning large folders like
+    *node_modules*.
+    """
+
+    root_path = Path(root_path).resolve()
+    if not root_path.exists():
+        raise FileNotFoundError(root_path)
+    if not root_path.is_dir():
+        raise NotADirectoryError(root_path)
+
+    is_ignored = _compile_ignore(root_path)
+
+    root_nodes: List[FsNode] = []
+    children_map: dict[Path, List[FsNode]] = {root_path: root_nodes}
+
+    for dirpath_str, dirnames, filenames in os.walk(root_path, topdown=True):
+        current_dir = Path(dirpath_str)
+        rel_dir = current_dir.relative_to(root_path)
+
+        # ----------------- prune sub-directories -----------------------------
+        # Filter/prune directories in-place (os.walk respects the modified list)
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in DEFAULT_IGNORES
+            and (include_hidden or not d.startswith('.'))
+            and not is_ignored(str(current_dir / d))
+        ]
+
+        parent_children = children_map.get(current_dir)
+        if parent_children is None:  # parent was pruned
+            continue
+
+        # Add directory nodes (sorted for determinism)
+        for d_name in sorted(dirnames):
+            dir_path = current_dir / d_name
+            dir_node: FsNode = {
+                "name": d_name,
+                "type": "directory",
+                "size_bytes": 0,  # to be filled later
+                "children": [],
+            }
+            parent_children.append(dir_node)
+            children_map[dir_path] = dir_node["children"]  # type: ignore[index]
+
+        # -------------------------- files -----------------------------------
+        # Process files (filter hidden + ignored)
+        for f_name in sorted(
+            f
+            for f in filenames
+            if (include_hidden or not f.startswith('.'))
+            and not is_ignored(str(current_dir / f))
+        ):
+            file_path = current_dir / f_name
+            try:
+                size = file_path.stat().st_size
+            except (OSError, FileNotFoundError):
+                continue
+            file_node: FsNode = {
+                "name": f_name,
+                "type": "file",
+                "size_bytes": size,
+                "children": None,
+            }
+            parent_children.append(file_node)
+
+    # -------------------- propagate directory sizes -------------------------
+
+    def _propagate_sizes(nodes: List[FsNode]) -> int:
+        total = 0
+        for n in nodes:
+            if n["type"] == "directory" and n["children"] is not None:
+                size = _propagate_sizes(n["children"])
+                n["size_bytes"] = size
+                total += size
+            else:
+                total += n["size_bytes"]
+        return total
+
+    _propagate_sizes(root_nodes)
+    return root_nodes 
+
+--- FILE: codetag/important.py ---
+"""Identify "important" files in a repository based on simple heuristics.
+
+The rules are defined in *rules.yaml* bundled alongside this module.  They are
+split into three categories:
+
+* **important_filenames**     – exact (case-insensitive) filename matches.
+* **important_suffixes**      – file extensions (including leading dot).
+* **important_substrings**    – substrings that appear anywhere in the filename.
+
+The public helper :func:`find_key_files` additionally reports the *N* largest
+files in the repository.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Set, Tuple, Optional
+
+import yaml
+
+__all__ = ["find_key_files"]
+
+
+# ---------------------------------------------------------------------------
+# Rules loading
+# ---------------------------------------------------------------------------
+
+def _load_rules() -> Dict[str, List[str]]:
+    """Load detection rules from *rules.yaml* bundled with this module.
+
+    When running as normal Python code, the file sits next to *important.py* 🐍.
+    Inside a PyInstaller-built executable the module is extracted into a
+    temporary directory and `__file__` points there – but the data file may be
+    located inside the application bundle.  Using ``importlib.resources`` takes
+    care of both scenarios.
+    """
+
+    try:
+        # Python ≥3.9 – *files* returns a Traversable object we can navigate.
+        from importlib import resources as importlib_resources  # type: ignore
+
+        if hasattr(importlib_resources, "files"):
+            rules_text = (importlib_resources.files(__package__)  # type: ignore[arg-type]
+                          / "rules.yaml").read_text("utf-8")
+        else:  # pragma: no cover – fallback for Python <3.9 (unlikely here)
+            with importlib_resources.open_text(__package__, "rules.yaml", encoding="utf-8") as fp:  # type: ignore[arg-type]
+                rules_text = fp.read()
+
+        data = yaml.safe_load(rules_text) or {}
+    except (FileNotFoundError, OSError, ImportError, yaml.YAMLError):
+        # Fall back to classic path-based loading – may still work in non-frozen
+        # environments or when importlib.resources is unavailable.
+        try:
+            rules_path = Path(__file__).with_name("rules.yaml")
+            with rules_path.open("r", encoding="utf-8") as fp:
+                data = yaml.safe_load(fp) or {}
+        except (OSError, yaml.YAMLError):
+            return {}
+
+    # ---------------------------------------------------------------------
+    # Normalise all rule lists to lower-cased strings for case-insensitive
+    # comparison later on.
+    # ---------------------------------------------------------------------
+    for key in ("important_filenames", "important_suffixes", "important_substrings"):
+        if key in data and isinstance(data[key], list):
+            data[key] = [str(item).lower() for item in data[key]]
+
+    return data
+
+
+# ---------------------------------------------------------------------------
+# Core helper
+# ---------------------------------------------------------------------------
+
+def find_key_files(
+    file_paths: List[Path],
+    root_path: Path,
+    *,
+    top_n: int = 5,
+) -> Dict[str, Any]:
+    """Return the *top_n* largest files and a list of important files.
+
+    *root_path* is used to produce relative paths for reporting.
+    """
+
+    rules = _load_rules()
+    important_filenames: Set[str] = set(rules.get("important_filenames", []))
+    important_suffixes: Set[str] = set(rules.get("important_suffixes", []))
+    important_substrings: List[str] = list(rules.get("important_substrings", []))
+
+    # --------------------------------- largest files ---------------------------------
+    file_size_pairs: List[Tuple[int, Path]] = []
+    for p in file_paths:
+        try:
+            file_size_pairs.append((p.stat().st_size, p))
+        except OSError:
+            continue
+
+    file_size_pairs.sort(key=lambda t: t[0], reverse=True)
+    largest_files_report: List[Dict[str, Any]] = []
+    for size, path in file_size_pairs[:max(0, top_n)]:
+        try:
+            rel_path = str(path.relative_to(root_path))
+        except ValueError:
+            rel_path = str(path)
+        largest_files_report.append({"path": rel_path, "size_bytes": size})
+
+    # -------------------------------- important heuristic ----------------------------
+    detected: Set[str] = set()
+    for p in file_paths:
+        name_lower = p.name.lower()
+        suffix_lower = p.suffix.lower()
+
+        rel: str
+        try:
+            rel = str(p.relative_to(root_path))
+        except ValueError:
+            rel = str(p)
+
+        # Exact filename rule
+        if name_lower in important_filenames:
+            detected.add(rel)
+            continue
+        # Extension rule
+        if suffix_lower in important_suffixes:
+            detected.add(rel)
+            continue
+        # Substring rule
+        for sub in important_substrings:
+            if sub in name_lower:
+                detected.add(rel)
+                break
+
+    return {
+        "largest_files": largest_files_report,
+        "important_files_detected": sorted(detected),
+    } 
+
+--- FILE: codetag/language_stats.py ---
+"""Utilities for detecting file language and counting lines.
+
+The module currently focuses on single-file analysis via
+:func:`analyze_file_stats` but can later be extended to walk entire
+repositories and aggregate statistics.
+"""
+
+from __future__ import annotations
+
+from collections import namedtuple
+from pathlib import Path
+from typing import Dict, Optional
+
+# ---------------------------------------------------------------------------
+# Public data structures
+# ---------------------------------------------------------------------------
+
+FileStats = namedtuple("FileStats", ["language", "code", "blank", "comment"])
+
+# ---------------------------------------------------------------------------
+# Language detection helpers
+# ---------------------------------------------------------------------------
+
+# A (very) small, easily extensible mapping of filename/extension patterns to
+# human-readable language names.
+LANGUAGE_MAP: Dict[str, str] = {
+    # Extensions
+    ".py": "Python",
+    ".js": "JavaScript",
+    ".ts": "TypeScript",
+    ".java": "Java",
+    ".c": "C",
+    ".cpp": "C++",
+    ".h": "C/C++ Header",
+    ".cs": "C#",
+    ".go": "Go",
+    ".rs": "Rust",
+    ".rb": "Ruby",
+    ".php": "PHP",
+    ".html": "HTML",
+    ".css": "CSS",
+    ".scss": "SCSS",
+    ".md": "Markdown",
+    ".json": "JSON",
+    ".yml": "YAML",
+    ".yaml": "YAML",
+    ".sh": "Shell",
+    ".bat": "Batch",
+    ".ps1": "PowerShell",
+    # Filenames without extension
+    "Dockerfile": "Dockerfile",
+}
+
+# Comment prefix per language – keeps analysis *rough* but fast.
+COMMENT_MAP: Dict[str, str] = {
+    "Python": "#",
+    "JavaScript": "//",
+    "TypeScript": "//",
+    "Java": "//",
+    "C": "//",
+    "C++": "//",
+    "C#": "//",
+    "Go": "//",
+    "Rust": "//",
+    "Ruby": "#",
+    "Shell": "#",
+}
+
+# ---------------------------------------------------------------------------
+# Core logic
+# ---------------------------------------------------------------------------
+
+def analyze_file_stats(file_path: Path) -> Optional[FileStats]:
+    """Return :class:`FileStats` for *file_path* or *None* if not recognized.
+
+    • Language is inferred first by exact filename (e.g. *Dockerfile*), then by
+      extension (case-insensitive).
+    • Lines are classified as *code*, *blank* (no non-whitespace chars), or
+      *comment* (full-line comment using the language's single-line marker).
+    • Lines with inline comments still count as *code* (this matches many LOC
+      tools and is sufficient for a repository-level overview).
+    """
+
+    path = Path(file_path)
+
+    # Determine language.
+    language = LANGUAGE_MAP.get(path.name)
+    if language is None:
+        language = LANGUAGE_MAP.get(path.suffix.lower())
+    if language is None:
+        return None  # Unrecognised type – skip.
+
+    code_lines = blank_lines = comment_lines = 0
+    comment_prefix = COMMENT_MAP.get(language)
+
+    try:
+        with path.open("r", encoding="utf-8", errors="ignore") as fp:
+            for raw_line in fp:
+                line = raw_line.strip()
+                if not line:
+                    blank_lines += 1
+                elif comment_prefix and line.startswith(comment_prefix):
+                    comment_lines += 1
+                else:
+                    code_lines += 1
+    except (OSError, UnicodeDecodeError):
+        # File cannot be read – treat as unrecognised.
+        return None
+
+    return FileStats(language, code_lines, blank_lines, comment_lines) 
+
+--- FILE: codetag/licensing.py ---
+"""Licensing utilities for CodeTag.
+
+This module is intentionally self-contained so it can be frozen into a
+stand-alone binary later without pulling in the rest of the application.
+
+The public helpers are:
+
+* ``validate_license`` – ensure a valid license file is present; exits
+  the process when the license is missing or invalid.
+* ``activate_license`` – store a new, verified license on disk.
+
+Nothing in here depends on other Codetag internals aside from Pydantic.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import sys
+from pathlib import Path
+from typing import Optional
+
+from pydantic import BaseModel, ValidationError
+
+# IMPORTANT: keep this salt secret in the published binary.
+SECRET_SALT = "your-super-secret-salt-that-is-hard-to-guess"
+
+# Where the license is stored on the user machine (e.g. ~/.codetag.license)
+LICENSE_FILE = Path.home() / ".codetag.license"
+
+
+class LicenseData(BaseModel):
+    """Structured representation of a stored license file."""
+
+    email_hash: str
+    key: str
+
+    model_config = {
+        "frozen": True,  # make instances immutable so we do not mutate by accident
+        "extra": "forbid",  # guard against junk fields in the json
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public helpers
+# ---------------------------------------------------------------------------
+
+def validate_license() -> Optional[LicenseData]:
+    """Validate the locally stored license file.
+
+    On failure the process will exit with a non-zero status code.  When the
+    license is valid the parsed :class:`LicenseData` (for potential telemetry
+    or analytics) is returned.
+    """
+    if not LICENSE_FILE.exists():
+        print(
+            "ERROR: No license found. Please activate using 'codetag activate <key>'.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        data = LicenseData.model_validate_json(LICENSE_FILE.read_text())
+    except ValidationError:
+        print("ERROR: License file is corrupted. Please reactivate.", file=sys.stderr)
+        sys.exit(1)
+
+    # Re-calculate expected signature and compare.
+    expected_signature = hashlib.sha256((data.email_hash + SECRET_SALT).encode()).hexdigest()
+
+    if hashlib.sha256(data.key.encode()).hexdigest() != expected_signature:
+        print(
+            "ERROR: License key is invalid. It may be for a different user or has been revoked.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Optional – implement server-side revocation list check here.
+
+    # Informational message – can be removed in production.
+    print("License valid.", file=sys.stderr)
+    return data
+
+
+def activate_license(key: str, email: str) -> None:
+    """Validate *key* for *email* and persist it to :data:`LICENSE_FILE`."""
+    email_hash = hashlib.sha256(email.lower().strip().encode()).hexdigest()
+    expected_signature = hashlib.sha256((email_hash + SECRET_SALT).encode()).hexdigest()
+
+    if hashlib.sha256(key.encode()).hexdigest() != expected_signature:
+        print("ERROR: The provided key is not valid for this email address.", file=sys.stderr)
+        sys.exit(1)
+
+    license_data = LicenseData(email_hash=email_hash, key=key)
+    LICENSE_FILE.write_text(license_data.model_dump_json(indent=2))
+    print(f"✅ License successfully activated for {email}. Thank you!") 
+
+--- FILE: codetag/rules.yaml ---
+important_filenames:
+  - README.md
+  - Dockerfile
+  - docker-compose.yml
+  - package.json
+  - pyproject.toml
+  - requirements.txt
+  - pom.xml
+  - build.gradle
+  - Makefile
+
+important_suffixes:
+  - .cfg
+  - .conf
+  - .ini
+  - .lock
+  - .yml
+  - .yaml
+
+important_substrings:
+  - main
+  - app
+  - server
+  - index
+  - config
+  - settings 
+
+--- FILE: codetag/todos.py ---
+# file: codetag/todos.py
+
+import re
+from pathlib import Path
+from typing import List, Dict
+from collections import Counter
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
+# A case-insensitive regex to find TODO and FIXME markers.
+TODO_REGEX = re.compile(r"\b(TODO|FIXME)\b", re.IGNORECASE)
+
+# --- NEW: Define the threshold for switching to parallel processing ---
+# If a project has more than this many files, we'll use multiprocessing.
+# 50 is a reasonable default.
+PARALLEL_THRESHOLD = 50
+
+
+def _scan_single_file(file_path: Path) -> Counter:
+    """
+    Scans a single file for TODO/FIXME comments.
+    This function is executed by a worker process or in a loop.
+    """
+    counts = Counter()
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+            matches = TODO_REGEX.findall(content)
+            normalized_matches = (match.upper() for match in matches)
+            counts.update(normalized_matches)
+    except IOError:
+        # Silently ignore files that cannot be read.
+        pass
+    return counts
+
+
+def scan_for_todos(file_paths: List[Path]) -> Dict[str, int]:
+    """
+    Scans a list of files for TODO/FIXME comments.
+
+    NEW: Automatically chooses between sequential and parallel execution
+    based on the number of files.
+    """
+    total_counts: Counter = Counter()
+    num_files = len(file_paths)
+
+    if num_files == 0:
+        return {"todo_count": 0, "fixme_count": 0}
+
+    # --- NEW: Conditional Logic ---
+    if num_files < PARALLEL_THRESHOLD:
+        # --- Sequential Scan for small projects ---
+        # Lower overhead, faster for few files.
+        for path in file_paths:
+            total_counts.update(_scan_single_file(path))
+    else:
+        # --- Parallel Scan for large projects ---
+        # Higher startup cost, but much faster for many files.
+        with ProcessPoolExecutor() as executor:
+            future_to_file = {executor.submit(_scan_single_file, path): path for path in file_paths}
+
+            for future in as_completed(future_to_file):
+                try:
+                    result_counter = future.result()
+                    total_counts.update(result_counter)
+                except Exception:
+                    # In a real application, we might log this error.
+                    pass
+
+    return {
+        "todo_count": total_counts.get("TODO", 0),
+        "fixme_count": total_counts.get("FIXME", 0),
+    }
+
+
+__all__ = ["scan_for_todos"] 
+
+--- FILE: tests/conftest.py ---
+"""Pytest configuration file ensuring local package import works regardless of CWD."""
+
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    # Prepend so it has priority over any globally installed package version
+    sys.path.insert(0, str(PROJECT_ROOT)) 
+
+--- FILE: tests/test_cli.py ---
+# file: tests/test_cli.py
+
+from unittest.mock import patch
+from pathlib import Path
+
+from typer.testing import CliRunner
+
+from codetag.cli import app
+
+# ---------------------------------------------------------------------------
+# CLI test harness
+# ---------------------------------------------------------------------------
+
+runner = CliRunner()
+
+
+def test_scan_command_runs_successfully(tmp_path: Path):
+    """Smoke test: ensure `scan` runs and produces JSON on stdout."""
+
+    # Create a dummy file so the directory is not empty
+    (tmp_path / "test.txt").write_text("hello")
+
+    result = runner.invoke(app, ["scan", str(tmp_path)])
+
+    assert result.exit_code == 0, result.stderr
+    # Should contain JSON keys from the report
+    assert "repository_summary" in result.output
+    # Community mode banner expected because no license is present
+    assert "Running in community mode" in result.output
+
+
+def test_pack_command_fails_without_license(tmp_path: Path):
+    """`pack` must be gated – expect failure when no license is present."""
+
+    with patch("codetag.cli.validate_license", return_value=None):
+        result = runner.invoke(app, [
+            "pack",
+            str(tmp_path),
+            "-o",
+            str(tmp_path / "out.txt"),
+        ])
+
+    assert result.exit_code == 1
+    assert "ERROR: The 'pack' command is a Pro feature." in result.output
+    assert "Please activate a license" in result.output
+
+
+def test_pack_command_succeeds_with_license(tmp_path: Path):
+    """`pack` should succeed when a valid license is detected."""
+
+    # Prepare minimal project with a single source file
+    source = tmp_path / "code.py"
+    source.write_text("# My awesome code\n")
+    output_file = tmp_path / "context.txt"
+
+    with patch("codetag.cli.validate_license", return_value={"mock": "license"}):
+        result = runner.invoke(app, [
+            "pack",
+            str(tmp_path),
+            "-o",
+            str(output_file),
+        ])
+
+    assert result.exit_code == 0, result.stderr
+    assert "Pro license active" in result.output
+    assert output_file.exists()
+    packed_text = output_file.read_text()
+    assert "--- FILE: code.py ---" in packed_text 
+
+--- FILE: tests/test_fs_tree.py ---
+from pathlib import Path
+
+import pytest
+
+from codetag.fs_tree import build_fs_tree
+
+
+def test_build_fs_tree_basic(tmp_path: Path):
+    """The tree should list files and directories at the root level."""
+    # Arrange
+    (tmp_path / "dir").mkdir()
+    (tmp_path / "dir" / "file.txt").write_text("hello")
+    (tmp_path / "root_file.py").write_text("print('hi')")
+
+    # Act
+    tree = build_fs_tree(tmp_path)
+
+    # Assert – tree is now a list of top-level entries
+    names = {node["name"] for node in tree}
+    assert names == {"dir", "root_file.py"}
+
+    dir_node = next(n for n in tree if n["name"] == "dir")
+    assert dir_node["type"] == "directory"
+    assert len(dir_node["children"]) == 1
+    child = dir_node["children"][0]
+    assert child["name"] == "file.txt"
+    assert child["type"] == "file"
+
+
+def test_hidden_files_are_skipped(tmp_path: Path):
+    """Hidden files should be excluded unless *include_hidden* is True."""
+    # Arrange
+    (tmp_path / ".hidden").write_text("secret")
+
+    # Act & Assert
+    tree_default = build_fs_tree(tmp_path)
+    names_default = {node["name"] for node in tree_default}
+    assert ".hidden" not in names_default
+
+    tree_include = build_fs_tree(tmp_path, include_hidden=True)
+    names_include = {node["name"] for node in tree_include}
+    assert ".hidden" in names_include 
+
+--- FILE: tests/test_important.py ---
+from pathlib import Path
+
+from codetag.important import find_key_files
+
+
+def test_find_key_files(tmp_path: Path):
+    """Verify largest-files and rule-based important file detection."""
+    # Directory structure
+    (tmp_path / "src").mkdir()
+    (tmp_path / "config").mkdir()
+
+    # Create files with controlled sizes
+    (tmp_path / "README.md").write_text("a" * 100)  # 100 bytes
+    (tmp_path / "src" / "main.py").write_text("b" * 500)  # 500 bytes – should be largest
+    (tmp_path / "src" / "utils.py").write_text("c" * 50)  # 50 bytes
+    (tmp_path / "Dockerfile").write_text("d" * 200)  # 200 bytes
+    (tmp_path / "config" / "settings.ini").write_text("e" * 300)  # 300 bytes
+
+    all_files = [p for p in tmp_path.rglob("*") if p.is_file()]
+
+    results = find_key_files(all_files, tmp_path, top_n=3)
+
+    # Largest files order
+    largest = results["largest_files"]
+    assert [item["path"] for item in largest] == [
+        "src/main.py",
+        "config/settings.ini",
+        "Dockerfile",
+    ]
+
+    # Important file detection
+    important = set(results["important_files_detected"])
+    expected = {"README.md", "Dockerfile", "src/main.py", "config/settings.ini"}
+    assert important == expected 
+
+--- FILE: tests/test_language_stats.py ---
+from pathlib import Path
+
+from codetag.language_stats import analyze_file_stats
+
+
+def test_analyze_python_file(tmp_path: Path):
+    """Analyze a small Python file and verify counts."""
+    py_content = """
+# This is a full-line comment.
+import os
+
+class MyClass:  # This is an inline comment, we count it as code.
+    def method(self):
+        print("Hello, World!") # Another code line
+
+# Another comment.
+
+"""
+    test_file = tmp_path / "test_script.py"
+    test_file.write_text(py_content)
+
+    stats = analyze_file_stats(test_file)
+
+    assert stats is not None
+    assert stats.language == "Python"
+    assert stats.code == 4  # import, class, def, print
+    assert stats.blank == 4  # first blank, two mids, and final blank
+    assert stats.comment == 2  # two full-line comments
+
+
+def test_unrecognized_file_type(tmp_path: Path):
+    """Files with unknown extensions should return *None*."""
+    test_file = tmp_path / "document.custom"
+    test_file.write_text("some data")
+
+    stats = analyze_file_stats(test_file)
+    assert stats is None 
+
+--- FILE: tests/test_licensing.py ---
+"""Tests for *codetag.licensing* module."""
+
+import hashlib
+from pathlib import Path
+from unittest.mock import patch
+
+from codetag.licensing import activate_license, validate_license, SECRET_SALT
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+TEST_EMAIL = "test@example.com"
+
+def _get_test_key(email: str) -> str:
+    """Generate a valid license *key* for *email*."""
+    email_hash = hashlib.sha256(email.lower().strip().encode()).hexdigest()
+    return hashlib.sha256((email_hash + SECRET_SALT).encode()).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+def test_activation_and_validation(tmp_path: Path) -> None:
+    """A valid key can be activated and later validated."""
+    with patch("codetag.licensing.LICENSE_FILE", tmp_path / ".codetag.license"):
+        valid_key = _get_test_key(TEST_EMAIL)
+        assert activate_license(valid_key, TEST_EMAIL) is True
+
+        data = validate_license()
+        assert data is not None
+        assert data.key == valid_key
+
+
+def test_invalid_key_activation(tmp_path: Path) -> None:
+    """Activation should fail when the key is wrong."""
+    with patch("codetag.licensing.LICENSE_FILE", tmp_path / ".codetag.license"):
+        assert activate_license("this-is-a-wrong-key", TEST_EMAIL) is False
+        assert not (tmp_path / ".codetag.license").exists()
+
+
+def test_validation_fails_if_no_license(tmp_path: Path) -> None:
+    """Validation returns *None* when there is no license file."""
+    with patch("codetag.licensing.LICENSE_FILE", tmp_path / ".codetag.license"):
+        assert validate_license() is None
+
+
+def test_validation_fails_on_tampered_file(tmp_path: Path) -> None:
+    """Corrupting the license file invalidates the license."""
+    license_file = tmp_path / ".codetag.license"
+    with patch("codetag.licensing.LICENSE_FILE", license_file):
+        valid_key = _get_test_key(TEST_EMAIL)
+        activate_license(valid_key, TEST_EMAIL)
+
+        # Tamper with the file so that validation should now fail.
+        license_file.write_text('{"email_hash": "tampered", "key": "tampered"}')
+        assert validate_license() is None 
+
+--- FILE: tests/test_todos.py ---
+# file: tests/test_todos.py
+
+from pathlib import Path
+from typing import List
+from unittest.mock import patch
+
+from codetag.todos import scan_for_todos
+
+
+def test_scan_for_todos_with_multiple_files(tmp_path: Path):
+    """End-to-end test on 3 files (mixed TODO/FIXME, sequential or parallel)."""
+
+    file1_content = "# TODO: Refactor this entire module.\n# fixme: This is a hack."
+    file2_content = "// another todo to fix later\n// TODO: Add more tests."
+
+    (tmp_path / "file1.py").write_text(file1_content)
+    (tmp_path / "file2.js").write_text(file2_content)
+    (tmp_path / "file3.txt").write_text("no comments here")
+
+    all_files: List[Path] = list(tmp_path.glob("*"))
+    results = scan_for_todos(all_files)
+
+    assert results["todo_count"] == 3
+    assert results["fixme_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Explicitly test both execution paths (sequential vs parallel)
+# ---------------------------------------------------------------------------
+
+
+def test_scan_triggers_sequential_path(tmp_path: Path):
+    """Force the sequential branch by setting the threshold very high."""
+
+    with patch("codetag.todos.PARALLEL_THRESHOLD", 100):
+        f = tmp_path / "small_project.py"
+        f.write_text("# TODO: A simple task.")
+
+        results = scan_for_todos([f])
+        assert results["todo_count"] == 1
+        assert results["fixme_count"] == 0
+
+
+def test_scan_triggers_parallel_path(tmp_path: Path):
+    """Force the parallel branch by lowering the threshold."""
+
+    with patch("codetag.todos.PARALLEL_THRESHOLD", 2):
+        # Three files exceed the patched threshold (2)
+        (tmp_path / "f1.py").write_text("# TODO 1")
+        (tmp_path / "f2.py").write_text("# TODO 2")
+        (tmp_path / "f3.py").write_text("# FIXME 1")
+
+        all_files: List[Path] = list(tmp_path.glob("*"))
+        results = scan_for_todos(all_files)
+
+        assert results["todo_count"] == 2
+        assert results["fixme_count"] == 1
+
+
+def test_scan_with_no_matches(tmp_path: Path):
+    """Scanner should return zeros when no TODO/FIXME comments found."""
+
+    clean_file = tmp_path / "clean_code.py"
+    clean_file.write_text("print('all good')")
+
+    results = scan_for_todos([clean_file])
+    assert results["todo_count"] == 0
+    assert results["fixme_count"] == 0 
+
+--- FILE: LICENSE.txt ---
+END-USER LICENSE AGREEMENT (EULA)
+
+IMPORTANT: READ CAREFULLY
+
+This End-User License Agreement ("Agreement") is a legal contract between you (either an individual or a single entity) and the author of this software ("Licensor"). By purchasing, downloading, or using the accompanying software product ("Software"), you agree to be bound by the terms of this Agreement.
+
+1. GRANT OF LICENSE
+   The Licensor grants you a limited, non-exclusive, non-transferable license to install and use one copy of the Software for your personal or internal business purposes, subject to the usage limitations specified at the point of sale or in your purchase confirmation.
+
+2. RESTRICTIONS
+   You may NOT:
+   • reverse-engineer, decompile, or disassemble the Software;
+   • modify, adapt, or create derivative works based on the Software;
+   • distribute, resell, sublicense, rent, or lease the Software to any third party;
+   • remove, alter, or obscure any proprietary notices on the Software.
+
+3. OWNERSHIP
+   The Software is licensed, not sold. The Licensor retains all rights, title, and interest in and to the Software, including all intellectual-property rights.
+
+4. NO WARRANTY
+   The Software is provided "AS IS" without warranty of any kind, express or implied. Your use of the Software is at your sole risk.
+
+5. LIMITATION OF LIABILITY
+   In no event shall the Licensor be liable for any consequential, incidental, or special damages, including any lost profits or lost savings, arising out of the use or inability to use the Software, even if the Licensor has been advised of the possibility of such damages.
+
+6. TERMINATION
+   This Agreement is effective until terminated. Failure to comply with its terms will result in automatic termination. Upon termination, you must destroy all copies of the Software.
+
+7. GOVERNING LAW
+   This Agreement shall be governed by and construed in accordance with the laws of the jurisdiction of the Licensor, without regard to its conflict-of-law provisions.
+
+By using the Software, you acknowledge that you have read this Agreement, understand it, and agree to be bound by its terms. 
+
+--- FILE: README.md ---
+# CodeTag
+
+[![Python CI](https://github.com/paprikachewl/codetag/actions/workflows/ci.yml/badge.svg)](https://github.com/paprikachewl/codetag/actions/workflows/ci.yml)
+
+A lightweight, local-first CLI tool to rapidly understand a new codebase. It scans a repository and generates a single, structured JSON report detailing its file structure, language statistics, and key points of interest.
+
+---
+
+### About The Project
+
+Developers spend up to 60% of their time just reading and understanding code. When joining a new project, auditing a codebase, or onboarding a new team member, this "code comprehension" phase can take weeks or even months.
+
+CodeTag is designed to drastically shorten that time. It acts as an "instant audit," giving you a high-level, data-driven overview of any repository in seconds. It is built to be fast, private, and deterministic, running entirely on your local machine without ever sending your code to the cloud.
+
+### Key Features
+
+* **Detailed Structure Map:** Generates a complete directory tree of the repository.
+* **Language Statistics:** Calculates Lines of Code (LOC) and provides a breakdown by programming language.
+* **Key File Detection:** Automatically identifies important files like `READMEs`, `Dockerfiles`, configuration files, and potential entry points (`main.py`, `server.js`, etc.). It also lists the largest files, which often correlate with high complexity.
+* **Actionable Insights:** Scans for `TODO` and `FIXME` comments left in the code, giving you an instant pulse on technical debt.
+* **Single JSON Output:** Produces one clean, comprehensive JSON report that can be easily shared, stored, or used as context for other tools.
+* **Local & Secure:** Processes everything on your machine. Your source code is never uploaded.
+
+### Installation
+
+Download the latest pre-compiled binary for your operating system from the **[Releases](https://github.com/paprikachewl/codetag/releases)** page.
+
+Place the `codetag` (or `codetag.exe`) executable in a directory that is in your system's `PATH` (e.g., `/usr/local/bin` on macOS/Linux).
+
+No dependencies or runtimes are required.
+
+### Usage
+
+The primary command is `scan`. It takes a single argument: the path to the directory you want to analyze.
+
+```bash
+# Analyze the current directory and print the report to the console
+codetag scan .
+
+# Analyze a specific project directory
+codetag scan /path/to/my-project
+
+# Save the report to a file instead of printing it
+codetag scan . -o report.json
+
+# Include hidden files and directories (like .git) in the analysis
+codetag scan . -i
+```
+
+### Packing Source for AI Context
+
+CodeTag can also **pack all relevant source code into a single text file**, ideal for providing context to large-language models (LLMs). The command respects your `.gitignore`, skips oversized files, and lets you fine-tune what gets included.
+
+```bash
+# Pack a project and save the output
+codetag pack /path/to/my-project -o context.txt
+
+# Increase the maximum file size (e.g., 200 KB)
+codetag pack . -o context.txt --max-file-size-kb 200
+
+# Exclude additional extensions
+codetag pack . -o context.txt --exclude-extensions ".md,.log"
+```
+
+ℹ️  The `pack` command is a **Pro feature**. Activate your license first:
+
+```bash
+codetag activate <key> <email>
+```
+
+### Sample Output
+
+The tool outputs a single, well-structured JSON object.
+
+<details>
+<summary>Click to expand sample JSON report</summary>
+
+```json
+{
+  "analysis_metadata": {
+    "report_version": "1.0",
+    "timestamp": "2025-10-26T10:00:00Z",
+    "analysis_duration_seconds": 1.25
+  },
+  "repository_summary": {
+    "total_files": 451,
+    "total_lines_of_code": 28340,
+    "primary_language": "JavaScript",
+    "language_stats": {
+      "JavaScript": 21050,
+      "HTML": 4500,
+      "CSS": 2790
+    }
+  },
+  "directory_tree": [
+    {
+      "name": "client",
+      "type": "directory",
+      "size_bytes": 120450,
+      "children": [
+        { "name": "src", "type": "directory", "size_bytes": 110400, "children": [] }
+      ]
+    },
+    { "name": "package.json", "type": "file", "size_bytes": 1234, "children": null }
+  ],
+  "key_files": {
+    "largest_files": [
+      {
+        "path": "server/api/PaymentHandler.js",
+        "size_bytes": 8192
+      }
+    ],
+    "important_files_detected": [
+      "Dockerfile",
+      "README.md",
+      "package.json",
+      "server/server.js"
+    ]
+  },
+  "code_insights": {
+    "todo_count": 42,
+    "fixme_count": 7
+  }
+}
+```
+</details>
+
+### License
+
+This is a commercial software product. Your use of the software is governed by the terms of the End-User License Agreement (EULA) included with your download. 
+
+--- FILE: codetag-macos-arm64.spec ---
+# -*- mode: python ; coding: utf-8 -*-
+
+
+a = Analysis(
+    ['run_codetag.py'],
+    pathex=[],
+    binaries=[],
+    datas=[('codetag/rules.yaml', 'codetag')],
+    hiddenimports=[],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+    optimize=0,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name='codetag-macos-arm64',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+--- FILE: codetag.spec ---
+# -*- mode: python ; coding: utf-8 -*-
+
+
+a = Analysis(
+    ['codetag/cli.py'],
+    pathex=[],
+    binaries=[],
+    datas=[('codetag/rules.yaml', 'codetag')],
+    hiddenimports=[],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+    optimize=0,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name='codetag',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+--- FILE: pyproject.toml ---
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codetag"
+version = "0.1.0"
+description = "A CLI tool to quickly understand a new codebase by generating a structured JSON report."
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [
+  { name = "Patrick Dioquino", email = "alephron@proton.me" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "pydantic",
+    "pyyaml",
+    "typer[all]",  # Using typer for a great CLI experience
+    "pathspec",  # NEW: Parse .gitignore patterns
+    "gitignore-parser",  # NEW: Faster ignore handling
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pyinstaller",  # For building the binary later
+]
+
+[project.scripts]
+codetag = "codetag.cli:app" 
+
+--- FILE: run_codetag.py ---
+# file: run_codetag.py
+
+from codetag.cli import app
+
+if __name__ == "__main__":
+    app()
+

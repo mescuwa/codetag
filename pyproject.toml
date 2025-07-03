@@ -8,7 +8,6 @@ version = "0.1.0"
 description = "A CLI tool to quickly understand a new codebase by generating a structured JSON report."
 readme = "README.md"
 requires-python = ">=3.8"
-license = { text = "MIT" }
 authors = [
   { name = "Patrick Dioquino", email = "alephron@proton.me" },
 ]
@@ -23,6 +22,8 @@ dependencies = [
     "pydantic",
     "pyyaml",
     "typer[all]",  # Using typer for a great CLI experience
+    "pathspec",  # NEW: Parse .gitignore patterns
+    "gitignore-parser",  # NEW: Faster ignore handling
 ]
 
 [project.optional-dependencies]

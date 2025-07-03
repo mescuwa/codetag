@@ -1,78 +1,70 @@
-"""Parallel scanner for TODO / FIXME comments.
-
-The helper :func:`scan_for_todos` accepts an iterable of :class:`pathlib.Path`
-objects and returns a dictionary with the total number of *TODO* and *FIXME*
-occurrences across all readable files.
-
-A :pyclass:`concurrent.futures.ProcessPoolExecutor` is used so the scan can
-scale with CPU cores.  For small file sets the overhead is minimal, and for
-larger code-bases the parallelism provides a meaningful speed-up.
-"""
-
-from __future__ import annotations
+# file: codetag/todos.py
 
 import re
+from pathlib import Path
+from typing import List, Dict
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from pathlib import Path
-from typing import Counter as CounterType, Dict, Iterable, List
 
-# ---------------------------------------------------------------------------
-# Regex pre-compiled once so each worker process just re-imports the module.
-# ---------------------------------------------------------------------------
-
-# Matches the whole words TODO or FIXME, case-insensitive.
+# A case-insensitive regex to find TODO and FIXME markers.
 TODO_REGEX = re.compile(r"\b(TODO|FIXME)\b", re.IGNORECASE)
 
+# --- NEW: Define the threshold for switching to parallel processing ---
+# If a project has more than this many files, we'll use multiprocessing.
+# 50 is a reasonable default.
+PARALLEL_THRESHOLD = 50
 
-# ---------------------------------------------------------------------------
-# Worker helper (must be top-level to be picklable by multiprocessing).
-# ---------------------------------------------------------------------------
 
-def _scan_single_file(file_path: Path) -> CounterType[str]:
-    """Return a ``Counter`` of TODO / FIXME occurrences in *file_path*."""
-    counts: CounterType[str] = Counter()
-
+def _scan_single_file(file_path: Path) -> Counter:
+    """
+    Scans a single file for TODO/FIXME comments.
+    This function is executed by a worker process or in a loop.
+    """
+    counts = Counter()
     try:
-        with file_path.open("r", encoding="utf-8", errors="ignore") as fp:
-            matches = TODO_REGEX.findall(fp.read())
-            counts.update(match.upper() for match in matches)
-    except OSError:
-        # File could not be read – ignore silently.
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            content = f.read()
+            matches = TODO_REGEX.findall(content)
+            normalized_matches = (match.upper() for match in matches)
+            counts.update(normalized_matches)
+    except IOError:
+        # Silently ignore files that cannot be read.
         pass
-
     return counts
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-def scan_for_todos(file_paths: Iterable[Path]) -> Dict[str, int]:
-    """Scan *file_paths* in parallel and return TODO / FIXME totals.
-
-    The result dict has keys ``todo_count`` and ``fixme_count``.
+def scan_for_todos(file_paths: List[Path]) -> Dict[str, int]:
     """
+    Scans a list of files for TODO/FIXME comments.
 
-    paths: List[Path] = list(file_paths)
+    NEW: Automatically chooses between sequential and parallel execution
+    based on the number of files.
+    """
+    total_counts: Counter = Counter()
+    num_files = len(file_paths)
 
-    # Fast-path: no files.
-    if not paths:
+    if num_files == 0:
         return {"todo_count": 0, "fixme_count": 0}
 
-    total_counts: CounterType[str] = Counter()
+    # --- NEW: Conditional Logic ---
+    if num_files < PARALLEL_THRESHOLD:
+        # --- Sequential Scan for small projects ---
+        # Lower overhead, faster for few files.
+        for path in file_paths:
+            total_counts.update(_scan_single_file(path))
+    else:
+        # --- Parallel Scan for large projects ---
+        # Higher startup cost, but much faster for many files.
+        with ProcessPoolExecutor() as executor:
+            future_to_file = {executor.submit(_scan_single_file, path): path for path in file_paths}
 
-    # Using a context-manager ensures the pool shuts down cleanly in tests.
-    with ProcessPoolExecutor() as executor:
-        future_to_path = {executor.submit(_scan_single_file, p): p for p in paths}
-
-        for future in as_completed(future_to_path):
-            try:
-                total_counts.update(future.result())
-            except Exception:
-                # Ignore worker failures; they are unlikely but shouldn't abort
-                # the entire scan.  A real implementation could log these.
-                pass
+            for future in as_completed(future_to_file):
+                try:
+                    result_counter = future.result()
+                    total_counts.update(result_counter)
+                except Exception:
+                    # In a real application, we might log this error.
+                    pass
 
     return {
         "todo_count": total_counts.get("TODO", 0),

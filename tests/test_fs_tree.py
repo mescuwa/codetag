@@ -15,16 +15,16 @@ def test_build_fs_tree_basic(tmp_path: Path):
     # Act
     tree = build_fs_tree(tmp_path)
 
-    # Assert
-    assert tree["type"] == "directory"
-    names = {child["name"] for child in tree["children"]}
+    # Assert – tree is now a list of top-level entries
+    names = {node["name"] for node in tree}
     assert names == {"dir", "root_file.py"}
 
-    dir_node = next(c for c in tree["children"] if c["name"] == "dir")
+    dir_node = next(n for n in tree if n["name"] == "dir")
     assert dir_node["type"] == "directory"
     assert len(dir_node["children"]) == 1
-    assert dir_node["children"][0]["name"] == "file.txt"
-    assert dir_node["children"][0]["type"] == "file"
+    child = dir_node["children"][0]
+    assert child["name"] == "file.txt"
+    assert child["type"] == "file"
 
 
 def test_hidden_files_are_skipped(tmp_path: Path):
@@ -34,9 +34,9 @@ def test_hidden_files_are_skipped(tmp_path: Path):
 
     # Act & Assert
     tree_default = build_fs_tree(tmp_path)
-    names_default = {child["name"] for child in tree_default["children"]}
+    names_default = {node["name"] for node in tree_default}
     assert ".hidden" not in names_default
 
     tree_include = build_fs_tree(tmp_path, include_hidden=True)
-    names_include = {child["name"] for child in tree_include["children"]}
+    names_include = {node["name"] for node in tree_include}
     assert ".hidden" in names_include 

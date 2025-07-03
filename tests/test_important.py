@@ -18,7 +18,7 @@ def test_find_key_files(tmp_path: Path):
 
     all_files = [p for p in tmp_path.rglob("*") if p.is_file()]
 
-    results = find_key_files(all_files, top_n=3, root_dir=tmp_path)
+    results = find_key_files(all_files, tmp_path, top_n=3)
 
     # Largest files order
     largest = results["largest_files"]
