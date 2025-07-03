@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-selfcheck.json
+.tox/
+.nox/
+.eggs/
+*.egg-info/
+*.egg
+
+# Build artifacts
+dist/
+build/
+*.so
+
+# IDE / Editor specific
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Our temporary license file (so we don't commit our own dev license)
+.codetag.license 

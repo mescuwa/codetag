@@ -1,0 +1,26 @@
+important_filenames:
+  - README.md
+  - Dockerfile
+  - docker-compose.yml
+  - package.json
+  - pyproject.toml
+  - requirements.txt
+  - pom.xml
+  - build.gradle
+  - Makefile
+
+important_suffixes:
+  - .cfg
+  - .conf
+  - .ini
+  - .lock
+  - .yml
+  - .yaml
+
+important_substrings:
+  - main
+  - app
+  - server
+  - index
+  - config
+  - settings 

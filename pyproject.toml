@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codetag"
+version = "0.1.0"
+description = "A CLI tool to quickly understand a new codebase by generating a structured JSON report."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+  { name = "Patrick Dioquino", email = "alephron@proton.me" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "pydantic",
+    "pyyaml",
+    "typer[all]",  # Using typer for a great CLI experience
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pyinstaller",  # For building the binary later
+]
+
+[project.scripts]
+codetag = "codetag.cli:app" 
