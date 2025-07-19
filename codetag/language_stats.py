@@ -7,6 +7,7 @@ repositories and aggregate statistics.
 
 from __future__ import annotations
 
+import hashlib  # NEW: for content hashing
 from collections import namedtuple
 from pathlib import Path
 from typing import Dict, Optional
@@ -15,11 +16,21 @@ from typing import Dict, Optional
 # Public data structures
 # ---------------------------------------------------------------------------
 
-FileStats = namedtuple("FileStats", ["language", "code", "blank", "comment"])
+# NEW: Added 'content_hash' to capture file content integrity
+FileStats = namedtuple("FileStats", ["language", "code", "blank", "comment", "content_hash"])
 
 # ---------------------------------------------------------------------------
 # Language detection helpers
 # ---------------------------------------------------------------------------
+
+# Central list of extensions considered *source code* across CodeTag.
+SOURCE_CODE_EXTENSIONS = {
+    ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".c", ".cpp", ".h", ".cs", ".go",
+    ".rs", ".rb", ".php", ".swift", ".kt", ".m", ".mm", ".html", ".htm", ".css",
+    ".scss", ".sass", ".md", ".rst", ".txt", ".yaml", ".yml", ".toml", ".ini",
+    ".cfg", ".sh", ".bash", ".zsh", ".ps1", ".bat", ".tf", ".jsonl", "dockerfile",
+    "makefile",
+}
 
 # A (very) small, easily extensible mapping of filename/extension patterns to
 # human-readable language names.
@@ -94,17 +105,21 @@ def analyze_file_stats(file_path: Path) -> Optional[FileStats]:
     comment_prefix = COMMENT_MAP.get(language)
 
     try:
-        with path.open("r", encoding="utf-8", errors="ignore") as fp:
-            for raw_line in fp:
-                line = raw_line.strip()
-                if not line:
-                    blank_lines += 1
-                elif comment_prefix and line.startswith(comment_prefix):
-                    comment_lines += 1
-                else:
-                    code_lines += 1
+        # Read the entire content once to both analyse lines and compute hash
+        content = path.read_text("utf-8", errors="ignore")
+        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+        for raw_line in content.splitlines():
+            line = raw_line.strip()
+            if not line:
+                blank_lines += 1
+            elif comment_prefix and line.startswith(comment_prefix):
+                comment_lines += 1
+            else:
+                code_lines += 1
     except (OSError, UnicodeDecodeError):
         # File cannot be read – treat as unrecognised.
         return None
 
-    return FileStats(language, code_lines, blank_lines, comment_lines) 
+    # Include the newly computed content_hash in the returned stats
+    return FileStats(language, code_lines, blank_lines, comment_lines, content_hash) 

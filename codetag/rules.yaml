@@ -24,3 +24,8 @@ important_substrings:
   - index
   - config
   - settings 
+  - train
+  - model
+  - data
+  - pipeline
+  - utils 

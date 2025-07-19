@@ -4,33 +4,54 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "codetag"
-version = "0.1.0"
-description = "A CLI tool to quickly understand a new codebase by generating a structured JSON report."
+version = "1.1.0"
+authors = [
+    { name = "Lumina Mescuwa", email = "mescuwa@proton.me" },
+]
+description = "Analyze, pack, and distill codebases for AI and human understanding."
 readme = "README.md"
 requires-python = ">=3.8"
-authors = [
-  { name = "Patrick Dioquino", email = "alephron@proton.me" },
-]
+license = { file = "LICENSE" }
+keywords = ["cli", "tui", "developer-tools", "llm", "ai", "code-analysis"]
 classifiers = [
-    "Programming Language :: Python :: 3",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Topic :: Software Development",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Utilities",
 ]
+
 dependencies = [
-    "pydantic",
-    "pyyaml",
-    "typer[all]",  # Using typer for a great CLI experience
-    "pathspec",  # NEW: Parse .gitignore patterns
-    "gitignore-parser",  # NEW: Faster ignore handling
+    "typer[all]>=0.9.0",
+    "pydantic>=2.0",
+    "gitignore-parser>=0.1",
+    "pyyaml>=6.0",
+    "gitpython>=3.1",
+    "tiktoken>=0.5",
+    "radon>=5.1",
+    "tomli>=2.0; python_version<'3.11'",
+    "prompt-toolkit>=3.0.0",
+    "rich>=13.0.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest",
-    "pyinstaller",  # For building the binary later
-]
+[project.urls]
+Homepage = "https://github.com/mescuwa/codetag"
+"Bug Tracker" = "https://github.com/mescuwa/codetag/issues"
 
 [project.scripts]
-codetag = "codetag.cli:app" 
+codetag = "codetag.cli:app"
+
+[project.optional-dependencies]
+audit = ["osv-scanner", "semgrep"]
+dev = ["pytest", "pytest-cov"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["codetag*"]
+
+[tool.setuptools]
+include-package-data = true 

@@ -19,6 +19,22 @@ from typing import Any, Dict, List, Set, Tuple, Optional
 
 import yaml
 
+# Type hints for FsNode
+from .fs_tree import FsNode, flatten_fs_tree
+
+# --- NEW: Non-source extensions to exclude when selecting largest files ---
+NON_SOURCE_EXTENSIONS = {
+    # Data & models
+    ".pt", ".pth", ".bin", ".onnx", ".safetensors",
+    ".npz", ".npy", ".csv", ".json", ".parquet", ".pkl", ".joblib",
+    # Logs & dumps
+    ".log", ".txt",
+    # Media
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".mp4", ".mp3",
+    # Archives & docs
+    ".zip", ".gz", ".tar", ".pdf",
+}
+
 __all__ = ["find_key_files"]
 
 
@@ -26,47 +42,51 @@ __all__ = ["find_key_files"]
 # Rules loading
 # ---------------------------------------------------------------------------
 
-def _load_rules() -> Dict[str, List[str]]:
-    """Load detection rules from *rules.yaml* bundled with this module.
+def load_rules(custom_path: Optional[Path] = None) -> Dict[str, List[str]]:
+    """Load detection rules.
 
-    When running as normal Python code, the file sits next to *important.py* 🐍.
-    Inside a PyInstaller-built executable the module is extracted into a
-    temporary directory and `__file__` points there – but the data file may be
-    located inside the application bundle.  Using ``importlib.resources`` takes
-    care of both scenarios.
+    If *custom_path* is provided and points to a YAML file, rules from that file
+    are **merged** with the built-in defaults (custom entries extend the
+    corresponding lists).  Lists are lower-cased for case-insensitive matching.
     """
 
+    def _normalise(rules_dict: Dict[str, List[str]]) -> None:
+        for key in ("important_filenames", "important_suffixes", "important_substrings"):
+            if key in rules_dict and isinstance(rules_dict[key], list):
+                rules_dict[key] = [str(item).lower() for item in rules_dict[key]]
+
+    # 1. Bundled defaults -----------------------------------------------------
     try:
-        # Python ≥3.9 – *files* returns a Traversable object we can navigate.
-        from importlib import resources as importlib_resources  # type: ignore
+        from importlib.resources import files  # type: ignore
 
-        if hasattr(importlib_resources, "files"):
-            rules_text = (importlib_resources.files(__package__)  # type: ignore[arg-type]
-                          / "rules.yaml").read_text("utf-8")
-        else:  # pragma: no cover – fallback for Python <3.9 (unlikely here)
-            with importlib_resources.open_text(__package__, "rules.yaml", encoding="utf-8") as fp:  # type: ignore[arg-type]
-                rules_text = fp.read()
+        default_text = files(__package__).joinpath("rules.yaml").read_text("utf-8")
+        data: Dict[str, List[str]] = yaml.safe_load(default_text) or {}
+    except (ImportError, FileNotFoundError, yaml.YAMLError):
+        data = {}
 
-        data = yaml.safe_load(rules_text) or {}
-    except (FileNotFoundError, OSError, ImportError, yaml.YAMLError):
-        # Fall back to classic path-based loading – may still work in non-frozen
-        # environments or when importlib.resources is unavailable.
+    _normalise(data)
+
+    # 2. User-supplied overrides ---------------------------------------------
+    if custom_path and Path(custom_path).is_file():
         try:
-            rules_path = Path(__file__).with_name("rules.yaml")
-            with rules_path.open("r", encoding="utf-8") as fp:
-                data = yaml.safe_load(fp) or {}
-        except (OSError, yaml.YAMLError):
-            return {}
+            user_text = Path(custom_path).read_text("utf-8")
+            user_rules: Dict[str, List[str]] = yaml.safe_load(user_text) or {}
+            _normalise(user_rules)
 
-    # ---------------------------------------------------------------------
-    # Normalise all rule lists to lower-cased strings for case-insensitive
-    # comparison later on.
-    # ---------------------------------------------------------------------
-    for key in ("important_filenames", "important_suffixes", "important_substrings"):
-        if key in data and isinstance(data[key], list):
-            data[key] = [str(item).lower() for item in data[key]]
+            # Merge – extend defaults with user values (duplicates OK; set later)
+            for key, lst in user_rules.items():
+                if key in data:
+                    data[key].extend(lst)
+                else:
+                    data[key] = lst
+        except Exception:
+            # If user file can't be parsed, fall back silently to defaults.
+            pass
 
     return data
+
+# Backwards-compat alias ------------------------------------------------------
+_load_rules = load_rules
 
 
 # ---------------------------------------------------------------------------
@@ -74,62 +94,62 @@ def _load_rules() -> Dict[str, List[str]]:
 # ---------------------------------------------------------------------------
 
 def find_key_files(
-    file_paths: List[Path],
+    tree: List[FsNode],
     root_path: Path,
     *,
     top_n: int = 5,
+    rules_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """Return the *top_n* largest files and a list of important files.
+    """Return a report of *top_n* largest files plus important files.
 
-    *root_path* is used to produce relative paths for reporting.
+    The function now works directly with the rich *FsNode* tree so it can
+    surface Git-LFS metadata without having to re-stat every path.
     """
 
-    rules = _load_rules()
+    rules = load_rules(custom_path=rules_path)
     important_filenames: Set[str] = set(rules.get("important_filenames", []))
     important_suffixes: Set[str] = set(rules.get("important_suffixes", []))
     important_substrings: List[str] = list(rules.get("important_substrings", []))
 
-    # --------------------------------- largest files ---------------------------------
-    file_size_pairs: List[Tuple[int, Path]] = []
-    for p in file_paths:
-        try:
-            file_size_pairs.append((p.stat().st_size, p))
-        except OSError:
-            continue
+    # Flatten the tree once for efficient processing
+    all_files_with_meta = flatten_fs_tree(tree, with_meta=True)
 
-    file_size_pairs.sort(key=lambda t: t[0], reverse=True)
+    # ---------------- largest files (filtered to likely source code) ----------------
+    source_files_only = [
+        f for f in all_files_with_meta
+        if Path(f["path"]).suffix.lower() not in NON_SOURCE_EXTENSIONS
+    ]
+    source_files_only.sort(key=lambda f: f["size_bytes"], reverse=True)
     largest_files_report: List[Dict[str, Any]] = []
-    for size, path in file_size_pairs[:max(0, top_n)]:
-        try:
-            rel_path = str(path.relative_to(root_path))
-        except ValueError:
-            rel_path = str(path)
-        largest_files_report.append({"path": rel_path, "size_bytes": size})
+    for file_info in source_files_only[:max(0, top_n)]:
+        report_item = {
+            "path": file_info["path"],
+            "size_bytes": file_info["size_bytes"],
+        }
+        if file_info.get("is_lfs_pointer"):
+            report_item["is_lfs"] = True
+        largest_files_report.append(report_item)
 
-    # -------------------------------- important heuristic ----------------------------
+    # --------------- important heuristic --------------
     detected: Set[str] = set()
-    for p in file_paths:
-        name_lower = p.name.lower()
-        suffix_lower = p.suffix.lower()
-
-        rel: str
-        try:
-            rel = str(p.relative_to(root_path))
-        except ValueError:
-            rel = str(p)
+    for file_info in all_files_with_meta:
+        path_obj = Path(file_info["path"])
+        name_lower = path_obj.name.lower()
+        suffix_lower = path_obj.suffix.lower()
 
         # Exact filename rule
         if name_lower in important_filenames:
-            detected.add(rel)
+            detected.add(file_info["path"])
             continue
         # Extension rule
         if suffix_lower in important_suffixes:
-            detected.add(rel)
+            detected.add(file_info["path"])
             continue
         # Substring rule
+            
         for sub in important_substrings:
             if sub in name_lower:
-                detected.add(rel)
+                detected.add(file_info["path"])
                 break
 
     return {

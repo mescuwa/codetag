@@ -1,146 +1,116 @@
-# CodeTag
+# CodeTag: AI-Powered Codebase Analysis and Distillation
 
-[![Python CI](https://github.com/paprikachewl/codetag/actions/workflows/ci.yml/badge.svg)](https://github.com/paprikachewl/codetag/actions/workflows/ci.yml)
-
-A lightweight, local-first CLI tool to rapidly understand a new codebase. It scans a repository and generates a single, structured JSON report detailing its file structure, language statistics, and key points of interest.
+**CodeTag** is a powerful, **interactive** toolkit for analysing, understanding, and summarising software repositories. It turns sprawling projects into concise, AI-ready context through a guided, text-based user-interface (TUI).
 
 ---
 
-### About The Project
+## Why CodeTag?
 
-Developers spend up to 60% of their time just reading and understanding code. When joining a new project, auditing a codebase, or onboarding a new team member, this "code comprehension" phase can take weeks or even months.
+* **Guided UX** – a menu-driven TUI makes every feature discoverable.
+* **Insightful Metrics** – language breakdowns, complexity scores & dependency graphs in seconds.
+* **AI-Ready Context** – pack or distil code into a single file tailor-made for LLMs.
+* **Integrated Security** – optional OSV-Scanner & Semgrep checks before you share code.
+* **Hybrid Power** – friendly TUI for humans; rich CLI for automation.
 
-CodeTag is designed to drastically shorten that time. It acts as an "instant audit," giving you a high-level, data-driven overview of any repository in seconds. It is built to be fast, private, and deterministic, running entirely on your local machine without ever sending your code to the cloud.
+---
 
-### Key Features
+## 🚀 Installation (Recommended)
 
-* **Detailed Structure Map:** Generates a complete directory tree of the repository.
-* **Language Statistics:** Calculates Lines of Code (LOC) and provides a breakdown by programming language.
-* **Key File Detection:** Automatically identifies important files like `READMEs`, `Dockerfiles`, configuration files, and potential entry points (`main.py`, `server.js`, etc.). It also lists the largest files, which often correlate with high complexity.
-* **Actionable Insights:** Scans for `TODO` and `FIXME` comments left in the code, giving you an instant pulse on technical debt.
-* **Single JSON Output:** Produces one clean, comprehensive JSON report that can be easily shared, stored, or used as context for other tools.
-* **Local & Secure:** Processes everything on your machine. Your source code is never uploaded.
+The easiest way to install CodeTag is via **[pipx](https://pypa.github.io/pipx/)** – it creates an isolated environment automatically and places the `codetag` command on your `$PATH`.
 
-### Installation
-
-Download the latest pre-compiled binary for your operating system from the **[Releases](https://github.com/paprikachewl/codetag/releases)** page.
-
-Place the `codetag` (or `codetag.exe`) executable in a directory that is in your system's `PATH` (e.g., `/usr/local/bin` on macOS/Linux).
-
-No dependencies or runtimes are required.
-
-### Usage
-
-The CLI is simple and straightforward. You can get help for any command by adding `--help`.
+### 1. Install `pipx` *(one-time)*
 
 ```bash
-# Get the application's version
-codetag --version
-
-# --- The 'scan' command ---
-
-# Analyze the current directory and print the report to the console
-codetag scan .
-
-# Analyze a specific project directory
-codetag scan /path/to/my-project
-
-# Save the report to a file instead of printing it
-codetag scan . -o report.json
-
-# Include hidden files and directories (like .git) in the analysis
-codetag scan . -i
-
-# --- The 'pack' command (Pro Feature) ---
-
-# Pack a project and save the output to a text file
-codetag pack /path/to/my-project -o context.txt
-
-# Customize the packing by changing the max file size (e.g., 200 KB)
-codetag pack . -o context.txt --max-file-size-kb 200
-
-# Customize which extensions to exclude
-codetag pack . -o context.txt --exclude-extensions ".md,.log"
+# macOS / Linux
+python3 -m pip install --user pipx
+python3 -m pipx ensurepath  # may require terminal restart
 ```
 
-### Packing Source for AI Context
-
-CodeTag can also **pack all relevant source code into a single text file**, ideal for providing context to large-language models (LLMs). The command respects your `.gitignore`, skips oversized files, and lets you fine-tune what gets included.
+### 2. Install CodeTag
 
 ```bash
-# Pack a project and save the output
-codetag pack /path/to/my-project -o context.txt
-
-# Increase the maximum file size (e.g., 200 KB)
-codetag pack . -o context.txt --max-file-size-kb 200
-
-# Exclude additional extensions
-codetag pack . -o context.txt --exclude-extensions ".md,.log"
+pipx install git+https://github.com/mescuwa/codetag.git
 ```
 
-ℹ️  The `pack` command is a **Pro feature**. Activate your license first:
+That's it – `codetag` is now available everywhere:
 
 ```bash
-codetag activate <key> <email>
+codetag  # launches the interactive TUI
 ```
 
-### Sample Output
+---
 
-The tool outputs a single, well-structured JSON object.
+## External Dependencies (for the `audit` command)
 
-<details>
-<summary>Click to expand sample JSON report</summary>
+`audit` orchestrates standalone security tools; install them *inside* CodeTag’s pipx environment:
 
-```json
-{
-  "analysis_metadata": {
-    "report_version": "1.0",
-    "timestamp": "2025-10-26T10:00:00Z",
-    "analysis_duration_seconds": 1.25
-  },
-  "repository_summary": {
-    "total_files": 451,
-    "total_lines_of_code": 28340,
-    "primary_language": "JavaScript",
-    "language_stats": {
-      "JavaScript": 21050,
-      "HTML": 4500,
-      "CSS": 2790
-    }
-  },
-  "directory_tree": [
-    {
-      "name": "client",
-      "type": "directory",
-      "size_bytes": 120450,
-      "children": [
-        { "name": "src", "type": "directory", "size_bytes": 110400, "children": [] }
-      ]
-    },
-    { "name": "package.json", "type": "file", "size_bytes": 1234, "children": null }
-  ],
-  "key_files": {
-    "largest_files": [
-      {
-        "path": "server/api/PaymentHandler.js",
-        "size_bytes": 8192
-      }
-    ],
-    "important_files_detected": [
-      "Dockerfile",
-      "README.md",
-      "package.json",
-      "server/server.js"
-    ]
-  },
-  "code_insights": {
-    "todo_count": 42,
-    "fixme_count": 7
-  }
-}
+```bash
+pipx inject codetag osv-scanner   # dependency vulnerability scanner
+pipx inject codetag semgrep       # static code analysis
 ```
-</details>
 
-### License
+For **tree-sitter distillation** follow the instructions in the advanced section below.
 
-This is a commercial software product. Your use of the software is governed by the terms of the End-User License Agreement (EULA) included with your download. 
+---
+
+## For Developers / Contributors
+
+Prefer a classic editable install? Use a virtual environment:
+
+```bash
+# clone & enter repo
+git clone https://github.com/mescuwa/codetag.git
+cd codetag
+
+# create & activate venv
+python -m venv venv
+source venv/bin/activate  # Windows: .\venv\Scripts\activate
+
+# editable install with extras
+pip install -e ".[audit,dev]"
+```
+
+---
+
+## Advanced Usage – CLI Reference
+
+The TUI shows the equivalent CLI after every run, but here are common commands:
+
+```bash
+# scan a repo into JSON
+codetag scan ./project --output report.json
+
+# pack with 100k token budget
+codetag pack ./project --output packed.txt --max-tokens 100000
+
+# distill (level 2)
+codetag distill ./project --output summary.txt --level 2
+
+# audit with stricter rules
+codetag audit ./project --strict
+```
+
+Settings can be stored in a `.codetag.yaml`; flags override file values.
+
+---
+
+## Advanced: Enabling Tree-sitter Distillation
+
+```bash
+pip install tree-sitter
+# clone grammars you need e.g.
+git clone https://github.com/tree-sitter/tree-sitter-python vendor/tree-sitter-python
+
+python - <<'PY'
+from tree_sitter import Language
+Language.build_library('build/my-languages.so', ['vendor/tree-sitter-python'])
+PY
+
+export CODETAG_TS_LIB=build/my-languages.so
+```
+
+---
+
+## Licence
+
+CodeTag is released under the MIT Licence (see `LICENSE`).

@@ -1,35 +1,76 @@
-# Python
+# Byte-compiled / optimized / C extensions
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-pip-selfcheck.json
-.tox/
-.nox/
-.eggs/
-*.egg-info/
-*.egg
+*.py[cod]
+*$py.class
 
-# Build artifacts
-dist/
-build/
+# C extensions
 *.so
 
-# IDE / Editor specific
-.vscode/
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE specific
 .idea/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.swp
+.vscode/
+*.sublime-project
+*.sublime-workspace
 
-# OS-specific
+# CodeTag specific
+.codetag_cache/
+*.codetag
+*.map.json
+packed_code.txt
+distilled.txt
+report.json 
+.codetag_history.json
+# OS-specific files
 .DS_Store
-Thumbs.db
-
-# Our temporary license file (so we don't commit our own dev license)
-.codetag.license 
+Thumbs.db 

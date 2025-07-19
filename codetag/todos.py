@@ -23,10 +23,11 @@ def _scan_single_file(file_path: Path) -> Counter:
     counts = Counter()
     try:
         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read()
-            matches = TODO_REGEX.findall(content)
-            normalized_matches = (match.upper() for match in matches)
-            counts.update(normalized_matches)
+            for line in f:  # Read line by line to prevent memory exhaustion
+                matches = TODO_REGEX.findall(line)
+                if matches:
+                    normalized_matches = (match.upper() for match in matches)
+                    counts.update(normalized_matches)
     except IOError:
         # Silently ignore files that cannot be read.
         pass
