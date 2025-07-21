@@ -35,7 +35,7 @@ dependencies = [
     "radon>=5.1",
     "tomli>=2.0; python_version<'3.11'",
     "prompt-toolkit>=3.0.0",
-    "rich>=13.0.0",
+    "rich>=13.7.1",
 ]
 
 [project.urls]
@@ -46,7 +46,7 @@ Homepage = "https://github.com/mescuwa/codetag"
 codetag = "codetag.cli:app"
 
 [project.optional-dependencies]
-audit = ["osv-scanner", "semgrep"]
+audit = ["semgrep"]
 dev = ["pytest", "pytest-cov", "ruff"]
 
 [tool.setuptools.packages.find]
