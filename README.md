@@ -1,4 +1,4 @@
-# CodeTag: AI-Powered Codebase Analysis and Distillation
+# CodeTag: The Smart Toolkit for Codebase Analysis and LLM Context Packing
 
 **CodeTag** is a powerful, **interactive** toolkit for analysing, understanding, and summarising software repositories. It turns sprawling projects into concise, AI-ready context through a guided, text-based user-interface (TUI).
 
