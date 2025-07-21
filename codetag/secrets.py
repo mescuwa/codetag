@@ -43,6 +43,10 @@ BINARY_EXTENSIONS = {
 # Do not attempt to scan files larger than 1 MB – reduces I/O overhead
 MAX_SECRET_FILE_SIZE = 1_000_000  # bytes (≈1 MB)
 
+# Directories that commonly contain non-production or irrelevant files which
+# should be ignored during secret scanning to reduce false positives.
+DEFAULT_SECRET_EXCLUSIONS = {"tests", "test", ".venv", "venv", "node_modules"}
+
 # ---------------------------------------------------------------------------
 # Simple pattern-based secrets detection helpers
 # ---------------------------------------------------------------------------
@@ -90,6 +94,10 @@ def scan_for_secrets(file_paths: List[Path], root_path: Path) -> List[FoundSecre
     findings: List[FoundSecret] = []
 
     for path in file_paths:
+        # Skip files residing in excluded directories (e.g., tests, virtual envs)
+        if any(part in DEFAULT_SECRET_EXCLUSIONS for part in path.parts):
+            continue
+        
         # -------- quick filters to avoid heavy I/O -----------------------
         # 1. Skip obvious binary files by extension
         if path.suffix.lower() in BINARY_EXTENSIONS:
