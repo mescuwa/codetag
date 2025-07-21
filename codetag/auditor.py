@@ -127,7 +127,8 @@ def _run_osv_scanner(path: Path) -> List[DependencyVulnerability]:
             check=False,
             cwd=str(path),  # Run inside target repo
             timeout=300,  # Stop after 5 min
-            env={},  # No env variables inherited
+            # Inherit the parent environment so tools on PATH are found
+            env=None,
         )
         if not result.stdout:
             return []
@@ -182,7 +183,8 @@ def _run_semgrep(path: Path, strict: bool) -> List[CodeVulnerability]:
             check=False,
             cwd=str(path),  # Run inside the target repo
             timeout=300,  # Kill process after 5 minutes
-            env={},  # Do not inherit env variables
+            # Inherit the parent environment so tools on PATH are found
+            env=None,
         )
         if result.returncode not in (0, 1):
             raise subprocess.CalledProcessError(
