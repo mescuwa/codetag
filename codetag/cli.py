@@ -116,6 +116,16 @@ def scan_repository(
     ),
 ):
     """Analyze a repository and create a comprehensive JSON report."""
+    # Ensure *max_files* is an int even when the function is invoked directly (e.g. from TUI)
+    if not isinstance(
+        max_files, int
+    ):  # called programmatically, bypassing Typer parsing
+        try:
+            # Typer's OptionInfo exposes the default via .default
+            max_files = int(getattr(max_files, "default", 5000))
+        except Exception:
+            max_files = int(os.getenv("CODETAG_MAX_FILES", "5000"))
+
     # timer removed (variable unused)
     typer.echo(f"🔍 Analyzing repository at: {path}", err=True)
 
