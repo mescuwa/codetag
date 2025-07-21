@@ -62,6 +62,15 @@ Fix any reported issues locally so your PR sails through CI.
 
 ---
 
-## 3. Running Tests
+## Running Tests
 
+Our test suite uses **pytest**.  After setting up the development environment, execute all tests from the project root with:
+
+```bash
+pytest
 ```
+
+Pytest will automatically discover every file in the `tests/` directory.
+Please ensure the suite passes locally before opening a pull request.
+
+---
