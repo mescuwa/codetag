@@ -34,7 +34,7 @@ __all__ = [
 # Regex to split a requirement line at the first occurrence of a version
 # specifier operator, whitespace, or an inline comment.  This supports the
 # majority of PEP 440 specifiers without having to fully parse them.
-_REQ_SPLIT_RE = re.compile(r"[=<>!~#\s]")
+_REQ_SPLIT_RE = re.compile(r"[=<>~!\s]|(?<!\w)#")
 
 
 # ---------------------------------------------------------------------------

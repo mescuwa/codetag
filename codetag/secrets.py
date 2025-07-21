@@ -51,7 +51,7 @@ MAX_SECRET_FILE_SIZE = 1_000_000  # bytes (≈1 MB)
 SECRET_PATTERNS: List[Tuple[str, re.Pattern]] = [
     ("AWS Access Key", re.compile(r"AKIA[0-9A-Z]{16}")),
     ("GitHub Token", re.compile(r"ghp_[0-9a-zA-Z]{36}")),
-    ("Generic API Key", re.compile(r"[A-Za-z0-9]{20,40}_[A-Za-z0-9_]{20,40}")),
+    ("Generic API Key", re.compile(r"(?:api[_-]?key|token|access[_-]?key)[\s:=\"']{0,3}[A-Za-z0-9]{16,40}", re.IGNORECASE)),
     ("RSA Private Key", re.compile(r"-----BEGIN RSA PRIVATE KEY-----")),
 ]
 

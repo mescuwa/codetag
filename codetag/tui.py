@@ -57,6 +57,7 @@ TUI_STYLE = Style.from_dict(
         "button.focused": "bg:#007777 #ffffff",
         "checkbox": "#00ff00",
         "radio": "#00ff00",
+        "input-field": "#000000",
     }
 )
 
@@ -209,93 +210,40 @@ def _get_output_path(
 # ---------------------------------------------------------------------------
 
 
-def _echo_command(cmd: str, args: Dict[str, Any]) -> None:
-    """Generate an accurate shell command reflecting the current CLI definition."""
-    from typer.models import ArgumentInfo, OptionInfo  # type: ignore
-    from . import cli  # local import to avoid circular issues
+def _echo_command(parts: list[str]) -> None:
+    """Echo a scriptable command assembled from *parts* safely quoted."""
+    import shlex
 
-    # Resolve the callback function for the given CLI command name.
-    func = None
-    if hasattr(cli, cmd):
-        func = getattr(cli, cmd)  # type: ignore[attr-defined]
-    else:
-        for cinfo in getattr(cli.app, "registered_commands", []):
-            if cinfo.name == cmd or cinfo.callback.__name__ == cmd:
-                func = cinfo.callback
-                break
-
-    parts: list[str] = ["codetag", cmd]
-
-    if func is None:
-        # Fallback to naive behaviour.
-        for key, val in args.items():
-            if val in (None, False):
-                continue
-            flag = f"--{key.replace('_', '-')}"
-            if val is True:
-                parts.append(flag)
-            else:
-                parts.extend([flag, f'"{val}"'])
-    else:
-        import inspect as _ins
-
-        sig = _ins.signature(func)
-        for name, param in sig.parameters.items():
-            if name not in args:
-                continue
-            val = args[name]
-            if val in (None, False):
-                continue
-
-            default = param.default
-            if isinstance(default, ArgumentInfo):
-                parts.append(f'"{val}"')
-                continue
-
-            if isinstance(default, OptionInfo):
-                long_opt = None
-                if default.param_decls:
-                    long_opt = next(
-                        (d for d in default.param_decls if d.startswith("--")),
-                        default.param_decls[0],
-                    )
-                if long_opt is None:
-                    long_opt = f"--{name.replace('_', '-')}"
-
-                if isinstance(val, bool):
-                    all_decls: list[str] = []
-                    for decl in default.param_decls:
-                        if "/" in decl:
-                            all_decls.extend(decl.split("/"))
-                        else:
-                            all_decls.append(decl)
-                    positive = next(
-                        (
-                            d
-                            for d in all_decls
-                            if d.startswith("--") and not d.startswith("--no-")
-                        ),
-                        None,
-                    )
-                    negative = next(
-                        (d for d in all_decls if d.startswith("--no-")), None
-                    )
-                    chosen = positive if val else (negative or positive)
-                    if chosen:
-                        parts.append(chosen)
-                else:
-                    parts.extend([long_opt, f'"{val}"'])
-                continue
-
-            flag = f"--{name.replace('_', '-')}"
-            if val is True:
-                parts.append(flag)
-            else:
-                parts.extend([flag, f'"{val}"'])
-
+    quoted_parts = [shlex.quote(str(p)) for p in parts]
     console.print("\n[bold green]Equivalent Scriptable Command:[/bold green]")
-    console.print(Syntax(" ".join(parts), "bash", theme="monokai", word_wrap=True))
+    console.print(
+        Syntax(" ".join(quoted_parts), "bash", theme="monokai", word_wrap=True)
+    )
     console.print()
+
+
+# ---------------------------------------------------------------------------
+# CLI command builder helper
+# ---------------------------------------------------------------------------
+
+
+def _build_cli_parts(command: str, args: Dict[str, Any]) -> list[str]:
+    """Return list of CLI parts for *command* based on *args* dict."""
+    parts = ["codetag", command]
+    # Positional 'path' (if present) comes immediately after command.
+    if "path" in args and args["path"] is not None:
+        parts.append(str(args["path"]))
+
+    for key, val in args.items():
+        if key == "path" or val in (None, False):
+            continue
+
+        flag = f"--{key.replace('_', '-')}"
+        if val is True:
+            parts.append(flag)
+        else:
+            parts.extend([flag, str(val)])
+    return parts
 
 
 # ---------------------------------------------------------------------------
@@ -356,7 +304,7 @@ def _run_scan_flow(history: Dict[str, str]) -> None:
     }
     _run_with_progress("Scanning repository…", scan_repository, **args)
     console.print(Panel("[bold green]✔ Scan complete.[/bold green]", padding=1))
-    _echo_command("scan", args)
+    _echo_command(_build_cli_parts("scan", args))
 
 
 # ---------------------------------------------------------------------------
@@ -391,7 +339,7 @@ def _run_pack_flow(history: Dict[str, str]) -> None:
             padding=1,
         )
     )
-    _echo_command("pack", args)
+    _echo_command(_build_cli_parts("pack", args))
 
 
 # ---------------------------------------------------------------------------
@@ -433,7 +381,7 @@ def _run_distill_flow(history: Dict[str, str]) -> None:
             padding=1,
         )
     )
-    _echo_command("distill", args)
+    _echo_command(_build_cli_parts("distill", args))
 
 
 # ---------------------------------------------------------------------------
@@ -476,7 +424,7 @@ def _run_audit_flow(history: Dict[str, str]) -> None:
             )
         else:
             raise
-    _echo_command("audit", args)
+    _echo_command(_build_cli_parts("audit", args))
 
 
 # ---------------------------------------------------------------------------

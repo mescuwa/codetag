@@ -79,24 +79,20 @@ def check_for_lfs(file_path: Path) -> Optional[LfsInfo]:
     """Return :class:`LfsInfo` if *file_path* is a Git-LFS pointer, else *None*."""
 
     try:
-        # Pointer files are tiny (a few hundred bytes).  Abort early if bigger.
-        if file_path.stat().st_size > 500:  # heuristic – adjust if needed
-            return None
+        with file_path.open("r", encoding="utf-8", errors="ignore") as f:
+            first_line = f.readline()
+            if first_line.strip() != LFS_POINTER_VERSION:
+                return None
 
-        content = file_path.read_text(encoding="utf-8", errors="ignore")
+            # If version matches, read a bit more to capture size metadata
+            content_snippet = first_line + f.read(500)
 
-        # Quick prefix check
-        if not content.startswith(LFS_POINTER_VERSION):
-            return None
-
-        # Extract real size
-        match = LFS_SIZE_REGEX.search(content)
+        match = LFS_SIZE_REGEX.search(content_snippet)
         if match:
             real_size = int(match.group(1))
             return LfsInfo(real_size=real_size)
-
     except (OSError, UnicodeDecodeError):
-        # Unreadable or binary – treat as not-a-pointer.
+        # File unreadable or not text – treat as non-pointer.
         return None
 
     return None

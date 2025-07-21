@@ -117,10 +117,18 @@ def _run_osv_scanner(path: Path) -> List[DependencyVulnerability]:
 
     typer.echo("\n--- 1. Dependency Vulnerability Scan (OSV-Scanner) ---", err=True)
 
-    cmd = ["osv-scanner", "--json", "-r", str(path), "--skip-git"]
+    cmd = ["osv-scanner", "--json", "-r", ".", "--skip-git"]
     vulns: List[DependencyVulnerability] = []
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=str(path),  # Run inside target repo
+            timeout=300,  # Stop after 5 min
+            env={},  # No env variables inherited
+        )
         if not result.stdout:
             return []
         data = json.loads(result.stdout)
@@ -143,6 +151,9 @@ def _run_osv_scanner(path: Path) -> List[DependencyVulnerability]:
             "⚠️  'osv-scanner' not installed. Skipping dependency scan.", err=True
         )
         return []
+    except subprocess.TimeoutExpired:
+        typer.echo("⚠️  OSV-Scanner timed out after 5 minutes.", err=True)
+        return []
     except subprocess.CalledProcessError as exc:
         typer.echo(f"⚠️  OSV-Scanner failed with exit code {exc.returncode}.", err=True)
         typer.echo(f"⚠️  Stderr: {exc.stderr.strip()}", err=True)
@@ -161,10 +172,18 @@ def _run_semgrep(path: Path, strict: bool) -> List[CodeVulnerability]:
     typer.echo("\n--- 2. Code Vulnerability Scan (Semgrep) ---", err=True)
 
     config = "p/ci" if strict else "p/default"
-    cmd = ["semgrep", "scan", "--json", "--config", config, str(path)]
+    cmd = ["semgrep", "scan", "--json", "--config", config, "."]  # Scan within repo
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=str(path),  # Run inside the target repo
+            timeout=300,  # Kill process after 5 minutes
+            env={},  # Do not inherit env variables
+        )
         if result.returncode not in (0, 1):
             raise subprocess.CalledProcessError(
                 result.returncode, cmd, output=result.stdout, stderr=result.stderr
@@ -186,6 +205,9 @@ def _run_semgrep(path: Path, strict: bool) -> List[CodeVulnerability]:
         return vulns
     except FileNotFoundError:
         typer.echo("⚠️  'semgrep' not installed. Skipping SAST scan.", err=True)
+        return []
+    except subprocess.TimeoutExpired:
+        typer.echo("⚠️  Semgrep scan timed out after 5 minutes.", err=True)
         return []
     except subprocess.CalledProcessError as exc:
         typer.echo(f"⚠️  Semgrep scan failed with exit code {exc.returncode}.", err=True)
