@@ -20,9 +20,13 @@ import typer
 # Internal helpers -----------------------------------------------------------
 from .fs_tree import build_fs_tree, flatten_fs_tree
 from .secrets import scan_for_secrets
+
 # _get_all_files_from_tree replaced by flatten_fs_tree
 from .models import (
-    DependencyVulnerability, CodeVulnerability, FoundSecretModel, ThreatAssessment,
+    DependencyVulnerability,
+    CodeVulnerability,
+    FoundSecretModel,
+    ThreatAssessment,
 )
 
 # ---------------------------------------------------------------------------
@@ -31,6 +35,7 @@ from .models import (
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def audit_repository(path: Path, *, strict_semgrep: bool = False) -> ThreatAssessment:
     """Run dependency, SAST and secret scanning on *path*.
@@ -51,18 +56,30 @@ def audit_repository(path: Path, *, strict_semgrep: bool = False) -> ThreatAsses
     # ------------------------------------------------------------------
     dep_vulns = _run_osv_scanner(path)
     if dep_vulns:
-        typer.secho(f"🚨 Found {len(dep_vulns)} potential dependency vulnerabilities.", fg=typer.colors.RED, err=True)
+        typer.secho(
+            f"🚨 Found {len(dep_vulns)} potential dependency vulnerabilities.",
+            fg=typer.colors.RED,
+            err=True,
+        )
     else:
-        typer.secho("✅ No dependency vulnerabilities found.", fg=typer.colors.GREEN, err=True)
+        typer.secho(
+            "✅ No dependency vulnerabilities found.", fg=typer.colors.GREEN, err=True
+        )
 
     # ------------------------------------------------------------------
     # 2. Static analysis (Semgrep) --------------------------------------
     # ------------------------------------------------------------------
     code_vulns = _run_semgrep(path, strict_semgrep)
     if code_vulns:
-        typer.secho(f"🚨 Found {len(code_vulns)} potential code vulnerabilities.", fg=typer.colors.RED, err=True)
+        typer.secho(
+            f"🚨 Found {len(code_vulns)} potential code vulnerabilities.",
+            fg=typer.colors.RED,
+            err=True,
+        )
     else:
-        typer.secho("✅ No code vulnerabilities found.", fg=typer.colors.GREEN, err=True)
+        typer.secho(
+            "✅ No code vulnerabilities found.", fg=typer.colors.GREEN, err=True
+        )
 
     # ------------------------------------------------------------------
     # 3. Secret scan ----------------------------------------------------
@@ -72,7 +89,11 @@ def audit_repository(path: Path, *, strict_semgrep: bool = False) -> ThreatAsses
     secrets_raw = scan_for_secrets(all_files, path)
     secrets_models = [FoundSecretModel(**s) for s in secrets_raw]
     if secrets_models:
-        typer.secho(f"🚨 Found {len(secrets_models)} potential secret(s).", fg=typer.colors.RED, err=True)
+        typer.secho(
+            f"🚨 Found {len(secrets_models)} potential secret(s).",
+            fg=typer.colors.RED,
+            err=True,
+        )
     else:
         typer.secho("✅ No hardcoded secrets found.", fg=typer.colors.GREEN, err=True)
 
@@ -85,9 +106,11 @@ def audit_repository(path: Path, *, strict_semgrep: bool = False) -> ThreatAsses
         secrets_found=secrets_models,
     )
 
+
 # ---------------------------------------------------------------------------
 # Helper subprocess wrappers
 # ---------------------------------------------------------------------------
+
 
 def _run_osv_scanner(path: Path) -> List[DependencyVulnerability]:
     """Execute *osv-scanner* and parse JSON output into Pydantic objects."""
@@ -116,7 +139,9 @@ def _run_osv_scanner(path: Path) -> List[DependencyVulnerability]:
                     )
         return vulns
     except FileNotFoundError:
-        typer.echo("⚠️  'osv-scanner' not installed. Skipping dependency scan.", err=True)
+        typer.echo(
+            "⚠️  'osv-scanner' not installed. Skipping dependency scan.", err=True
+        )
         return []
     except subprocess.CalledProcessError as exc:
         typer.echo(f"⚠️  OSV-Scanner failed with exit code {exc.returncode}.", err=True)
@@ -141,7 +166,9 @@ def _run_semgrep(path: Path, strict: bool) -> List[CodeVulnerability]:
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if result.returncode not in (0, 1):
-            raise subprocess.CalledProcessError(result.returncode, cmd, output=result.stdout, stderr=result.stderr)
+            raise subprocess.CalledProcessError(
+                result.returncode, cmd, output=result.stdout, stderr=result.stderr
+            )
         if not result.stdout:
             return []
         data = json.loads(result.stdout)
@@ -169,4 +196,4 @@ def _run_semgrep(path: Path, strict: bool) -> List[CodeVulnerability]:
         return []
     except Exception as exc:
         typer.echo(f"⚠️  Semgrep unexpected error: {exc}", err=True)
-        return [] 
+        return []

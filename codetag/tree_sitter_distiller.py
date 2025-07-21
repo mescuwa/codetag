@@ -54,7 +54,10 @@ except Exception:  # pragma: no cover – missing or failing tree_sitter
 # Public helpers
 # ----------------------------------------------------------------------
 
-def distill_with_tree_sitter(content: str, file_extension: str, level: int) -> Optional[str]:
+
+def distill_with_tree_sitter(
+    content: str, file_extension: str, level: int
+) -> Optional[str]:
     """Attempt Tree-sitter based distillation.
 
     Returns *None* if the given *file_extension* is unsupported or Tree-sitter
@@ -104,10 +107,10 @@ def distill_with_tree_sitter(content: str, file_extension: str, level: int) -> O
         parts.append(content[cursor:])
 
         # Replace stripped segments with a single space to preserve offsets
-        stripped = " " .join(part for part in parts if part)
+        stripped = " ".join(part for part in parts if part)
         return stripped
 
     # ---------------- Level 2: (placeholder) ----------------------------
     # Proper structural distillation requires non-trivial subtree slicing
     # which is out of scope for this minimal integration.
-    return None 
+    return None

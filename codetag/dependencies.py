@@ -41,6 +41,7 @@ _REQ_SPLIT_RE = re.compile(r"[=<>!~#\s]")
 # Individual file parsers
 # ---------------------------------------------------------------------------
 
+
 def _strip_comments(lines: List[str]) -> List[str]:
     return [ln for ln in lines if ln and not ln.lstrip().startswith("#")]
 
@@ -78,7 +79,13 @@ def parse_pyproject_toml(path: Path) -> Optional[List[str]]:
         # PEP 621 standard location
         deps.extend(data.get("project", {}).get("dependencies", []) or [])
         # Poetry legacy location
-        deps.extend(list((data.get("tool", {}).get("poetry", {}).get("dependencies", {}) or {}).keys()))
+        deps.extend(
+            list(
+                (
+                    data.get("tool", {}).get("poetry", {}).get("dependencies", {}) or {}
+                ).keys()
+            )
+        )
         return deps or None
     except (OSError, tomli.TOMLDecodeError):
         # File missing, permission error, or malformed TOML.
@@ -103,6 +110,7 @@ def parse_package_json(path: Path) -> Optional[List[str]]:
 # Public orchestrator
 # ---------------------------------------------------------------------------
 
+
 def scan_for_dependencies(root_path: Path) -> Dict[str, List[str]]:
     """Return mapping of dependency-file name → list of packages discovered."""
 
@@ -120,4 +128,4 @@ def scan_for_dependencies(root_path: Path) -> Dict[str, List[str]]:
     if packagejson_deps:
         found["package.json"] = packagejson_deps
 
-    return found 
+    return found

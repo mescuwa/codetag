@@ -14,6 +14,7 @@ from .fs_tree import FsNode
 
 # --- Core Analysis Models -------------------------------------------------
 
+
 class AnalysisMetadata(BaseModel):
     report_version: str = "1.1"
     timestamp: str = Field(default_factory=lambda: time.strftime("%Y-%m-%dT%H:%M:%SZ"))
@@ -59,6 +60,7 @@ class DependencyInfo(BaseModel):
 
 # --- Security & Threat Models --------------------------------------------
 
+
 class FoundSecretModel(BaseModel):
     file_path: str
     secret_type: str
@@ -83,12 +85,15 @@ class CodeVulnerability(BaseModel):
 
 
 class ThreatAssessment(BaseModel):
-    dependency_vulnerabilities: List[DependencyVulnerability] = Field(default_factory=list)
+    dependency_vulnerabilities: List[DependencyVulnerability] = Field(
+        default_factory=list
+    )
     code_vulnerabilities: List[CodeVulnerability] = Field(default_factory=list)
     secrets_found: List[FoundSecretModel] = Field(default_factory=list)
 
 
 # --- Top-Level Report Model ----------------------------------------------
+
 
 class AnalysisReport(BaseModel):
     analysis_metadata: AnalysisMetadata
@@ -97,4 +102,4 @@ class AnalysisReport(BaseModel):
     key_files: KeyFiles = Field(default_factory=KeyFiles)
     code_insights: CodeInsights = Field(default_factory=CodeInsights)
     dependency_info: DependencyInfo = Field(default_factory=DependencyInfo)
-    threat_assessment: ThreatAssessment = Field(default_factory=ThreatAssessment) 
+    threat_assessment: ThreatAssessment = Field(default_factory=ThreatAssessment)

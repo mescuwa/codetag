@@ -17,7 +17,9 @@ from typing import Dict, Optional
 # ---------------------------------------------------------------------------
 
 # NEW: Added 'content_hash' to capture file content integrity
-FileStats = namedtuple("FileStats", ["language", "code", "blank", "comment", "content_hash"])
+FileStats = namedtuple(
+    "FileStats", ["language", "code", "blank", "comment", "content_hash"]
+)
 
 # ---------------------------------------------------------------------------
 # Language detection helpers
@@ -25,10 +27,45 @@ FileStats = namedtuple("FileStats", ["language", "code", "blank", "comment", "co
 
 # Central list of extensions considered *source code* across CodeTag.
 SOURCE_CODE_EXTENSIONS = {
-    ".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".c", ".cpp", ".h", ".cs", ".go",
-    ".rs", ".rb", ".php", ".swift", ".kt", ".m", ".mm", ".html", ".htm", ".css",
-    ".scss", ".sass", ".md", ".rst", ".txt", ".yaml", ".yml", ".toml", ".ini",
-    ".cfg", ".sh", ".bash", ".zsh", ".ps1", ".bat", ".tf", ".jsonl", "dockerfile",
+    ".py",
+    ".js",
+    ".ts",
+    ".jsx",
+    ".tsx",
+    ".java",
+    ".c",
+    ".cpp",
+    ".h",
+    ".cs",
+    ".go",
+    ".rs",
+    ".rb",
+    ".php",
+    ".swift",
+    ".kt",
+    ".m",
+    ".mm",
+    ".html",
+    ".htm",
+    ".css",
+    ".scss",
+    ".sass",
+    ".md",
+    ".rst",
+    ".txt",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".sh",
+    ".bash",
+    ".zsh",
+    ".ps1",
+    ".bat",
+    ".tf",
+    ".jsonl",
+    "dockerfile",
     "makefile",
 }
 
@@ -81,6 +118,7 @@ COMMENT_MAP: Dict[str, str] = {
 # Core logic
 # ---------------------------------------------------------------------------
 
+
 def analyze_file_stats(file_path: Path) -> Optional[FileStats]:
     """Return :class:`FileStats` for *file_path* or *None* if not recognized.
 
@@ -122,4 +160,4 @@ def analyze_file_stats(file_path: Path) -> Optional[FileStats]:
         return None
 
     # Include the newly computed content_hash in the returned stats
-    return FileStats(language, code_lines, blank_lines, comment_lines, content_hash) 
+    return FileStats(language, code_lines, blank_lines, comment_lines, content_hash)

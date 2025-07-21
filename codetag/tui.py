@@ -47,20 +47,23 @@ DISABLE_GUI = os.getenv("CODETAG_NOGUI") == "1"
 # Style definition
 # ---------------------------------------------------------------------------
 
-TUI_STYLE = Style.from_dict({
-    "dialog": "bg:#333332",
-    "dialog.body": "bg:#444442 #ffffff",
-    "dialog shadow": "bg:#222222",
-    "dialog.body label": "#d1d1d1",
-    "button": "bg:#005555 #ffffff",
-    "button.focused": "bg:#007777 #ffffff",
-    "checkbox": "#00ff00",
-    "radio": "#00ff00",
-})
+TUI_STYLE = Style.from_dict(
+    {
+        "dialog": "bg:#333332",
+        "dialog.body": "bg:#444442 #ffffff",
+        "dialog shadow": "bg:#222222",
+        "dialog.body label": "#d1d1d1",
+        "button": "bg:#005555 #ffffff",
+        "button.focused": "bg:#007777 #ffffff",
+        "checkbox": "#00ff00",
+        "radio": "#00ff00",
+    }
+)
 
 # ---------------------------------------------------------------------------
 # History helpers
 # ---------------------------------------------------------------------------
+
 
 def _load_history() -> Dict[str, str]:
     if not HISTORY_FILE.exists():
@@ -78,9 +81,11 @@ def _save_history(data: Dict[str, str]) -> None:
         # best-effort only
         pass
 
+
 # ---------------------------------------------------------------------------
 # Validators
 # ---------------------------------------------------------------------------
+
 
 class PathValidator(Validator):
     """Require an existing directory (expands ~)."""
@@ -104,9 +109,11 @@ class NonEmptyValidator(Validator):
         if not document.text.strip():
             raise ValidationError(message="This field cannot be empty.")
 
+
 # ---------------------------------------------------------------------------
 # Native directory picker
 # ---------------------------------------------------------------------------
+
 
 def _open_native_directory_picker() -> Optional[Path]:
     """Return a directory path chosen via *tkinter* file-dialog."""
@@ -135,11 +142,15 @@ def _open_native_directory_picker() -> Optional[Path]:
         ).run()
         return None
 
+
 # ---------------------------------------------------------------------------
 # Path selection helpers
 # ---------------------------------------------------------------------------
 
-def _choose_directory(title: str, history_key: str, history: Dict[str, str]) -> Optional[Path]:
+
+def _choose_directory(
+    title: str, history_key: str, history: Dict[str, str]
+) -> Optional[Path]:
     """Generic directory chooser with browse/type options."""
     browse_lbl = "Browse for a folder visually" + (" (Disabled)" if DISABLE_GUI else "")
     method = radiolist_dialog(
@@ -167,9 +178,13 @@ def _choose_directory(title: str, history_key: str, history: Dict[str, str]) -> 
     return None  # cancelled
 
 
-def _get_output_path(history: Dict[str, str], step_prefix: str, default_name: str, ext: str) -> Optional[Path]:
+def _get_output_path(
+    history: Dict[str, str], step_prefix: str, default_name: str, ext: str
+) -> Optional[Path]:
     """Two-step flow: pick directory, then filename."""
-    dir_path = _choose_directory(f"{step_prefix} – Select Output Directory", "last_output_dir", history)
+    dir_path = _choose_directory(
+        f"{step_prefix} – Select Output Directory", "last_output_dir", history
+    )
     if not dir_path:
         return None
 
@@ -188,9 +203,11 @@ def _get_output_path(history: Dict[str, str], step_prefix: str, default_name: st
 
     return dir_path / f"{filename.strip()}.{ext}"
 
+
 # ---------------------------------------------------------------------------
 # Command echo
 # ---------------------------------------------------------------------------
+
 
 def _echo_command(cmd: str, args: Dict[str, Any]) -> None:
     """Generate an accurate shell command reflecting the current CLI definition."""
@@ -221,6 +238,7 @@ def _echo_command(cmd: str, args: Dict[str, Any]) -> None:
                 parts.extend([flag, f'"{val}"'])
     else:
         import inspect as _ins
+
         sig = _ins.signature(func)
         for name, param in sig.parameters.items():
             if name not in args:
@@ -237,7 +255,10 @@ def _echo_command(cmd: str, args: Dict[str, Any]) -> None:
             if isinstance(default, OptionInfo):
                 long_opt = None
                 if default.param_decls:
-                    long_opt = next((d for d in default.param_decls if d.startswith("--")), default.param_decls[0])
+                    long_opt = next(
+                        (d for d in default.param_decls if d.startswith("--")),
+                        default.param_decls[0],
+                    )
                 if long_opt is None:
                     long_opt = f"--{name.replace('_', '-')}"
 
@@ -248,8 +269,17 @@ def _echo_command(cmd: str, args: Dict[str, Any]) -> None:
                             all_decls.extend(decl.split("/"))
                         else:
                             all_decls.append(decl)
-                    positive = next((d for d in all_decls if d.startswith("--") and not d.startswith("--no-")), None)
-                    negative = next((d for d in all_decls if d.startswith("--no-")), None)
+                    positive = next(
+                        (
+                            d
+                            for d in all_decls
+                            if d.startswith("--") and not d.startswith("--no-")
+                        ),
+                        None,
+                    )
+                    negative = next(
+                        (d for d in all_decls if d.startswith("--no-")), None
+                    )
                     chosen = positive if val else (negative or positive)
                     if chosen:
                         parts.append(chosen)
@@ -267,18 +297,26 @@ def _echo_command(cmd: str, args: Dict[str, Any]) -> None:
     console.print(Syntax(" ".join(parts), "bash", theme="monokai", word_wrap=True))
     console.print()
 
+
 # ---------------------------------------------------------------------------
 # Utility – progress wrapper
 # ---------------------------------------------------------------------------
 
+
 def _run_with_progress(desc: str, func: Callable[..., Any], **kwargs) -> None:
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as prog:
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+    ) as prog:
         prog.add_task(description=desc, total=None)
         func(**kwargs)
+
 
 # ---------------------------------------------------------------------------
 # Main menu
 # ---------------------------------------------------------------------------
+
 
 def _select_main_action() -> Optional[str]:
     return radiolist_dialog(
@@ -293,9 +331,11 @@ def _select_main_action() -> Optional[str]:
         style=TUI_STYLE,
     ).run()
 
+
 # ---------------------------------------------------------------------------
 # SCAN
 # ---------------------------------------------------------------------------
+
 
 def _run_scan_flow(history: Dict[str, str]) -> None:
     from .cli import scan_repository
@@ -318,9 +358,11 @@ def _run_scan_flow(history: Dict[str, str]) -> None:
     console.print(Panel("[bold green]✔ Scan complete.[/bold green]", padding=1))
     _echo_command("scan", args)
 
+
 # ---------------------------------------------------------------------------
 # PACK
 # ---------------------------------------------------------------------------
+
 
 def _run_pack_flow(history: Dict[str, str]) -> None:
     from .cli import pack
@@ -343,12 +385,19 @@ def _run_pack_flow(history: Dict[str, str]) -> None:
         "format": "raw",
     }
     _run_with_progress("Packing repository…", pack, **args)
-    console.print(Panel(f"[bold green]✔ Pack complete.[/bold green]\nSaved to [cyan]{output}[/cyan]", padding=1))
+    console.print(
+        Panel(
+            f"[bold green]✔ Pack complete.[/bold green]\nSaved to [cyan]{output}[/cyan]",
+            padding=1,
+        )
+    )
     _echo_command("pack", args)
+
 
 # ---------------------------------------------------------------------------
 # DISTILL
 # ---------------------------------------------------------------------------
+
 
 def _run_distill_flow(history: Dict[str, str]) -> None:
     from .cli import distill
@@ -378,12 +427,19 @@ def _run_distill_flow(history: Dict[str, str]) -> None:
         "anchors": True,
     }
     _run_with_progress("Distilling codebase…", distill, **args)
-    console.print(Panel(f"[bold green]✔ Distill complete.[/bold green]\nSaved to [cyan]{output}[/cyan]", padding=1))
+    console.print(
+        Panel(
+            f"[bold green]✔ Distill complete.[/bold green]\nSaved to [cyan]{output}[/cyan]",
+            padding=1,
+        )
+    )
     _echo_command("distill", args)
+
 
 # ---------------------------------------------------------------------------
 # AUDIT
 # ---------------------------------------------------------------------------
+
 
 def _run_audit_flow(history: Dict[str, str]) -> None:
     from .cli import audit
@@ -405,17 +461,28 @@ def _run_audit_flow(history: Dict[str, str]) -> None:
     args = {"path": repo, "strict": "strict" in strict_choice}
     try:
         _run_with_progress("Auditing repository…", audit, **args)
-        console.print(Panel("[bold green]✔ Audit complete: No issues found.[/bold green]", padding=1))
+        console.print(
+            Panel(
+                "[bold green]✔ Audit complete: No issues found.[/bold green]", padding=1
+            )
+        )
     except typer.Exit as exc:
         if exc.exit_code == 1:
-            console.print(Panel("[bold yellow]⚠ Audit finished: Potential issues found.[/bold yellow]", padding=1))
+            console.print(
+                Panel(
+                    "[bold yellow]⚠ Audit finished: Potential issues found.[/bold yellow]",
+                    padding=1,
+                )
+            )
         else:
             raise
     _echo_command("audit", args)
 
+
 # ---------------------------------------------------------------------------
 # Launcher
 # ---------------------------------------------------------------------------
+
 
 def run_tui() -> None:  # pragma: no cover
     from . import __version__
@@ -451,4 +518,4 @@ def run_tui() -> None:  # pragma: no cover
             style=TUI_STYLE,
         ).run()
     finally:
-        _save_history(history) 
+        _save_history(history)

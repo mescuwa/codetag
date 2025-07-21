@@ -25,6 +25,7 @@ class LfsInfo(dict):
 # .gitattributes helpers
 # ---------------------------------------------------------------------------
 
+
 def parse_gitattributes(repo_root: Path) -> List[str]:
     """Return a list of glob patterns that are managed by Git-LFS.
 
@@ -62,6 +63,7 @@ def parse_gitattributes(repo_root: Path) -> List[str]:
 # ---------------------------------------------------------------------------
 # Pointer file helpers
 # ---------------------------------------------------------------------------
+
 
 def is_file_lfs_managed(relative_path: Path, lfs_patterns: List[str]) -> bool:
     """Return *True* if *relative_path* matches any Git-LFS glob pattern."""
@@ -105,4 +107,4 @@ __all__ = [
     "is_file_lfs_managed",
     "check_for_lfs",
     "LfsInfo",
-] 
+]

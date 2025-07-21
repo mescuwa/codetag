@@ -24,13 +24,20 @@ from .dependencies import scan_for_dependencies
 from .complexity import analyze_complexity
 from .metrics import analyze_python_file_metrics
 from .models import (
-    AnalysisReport, RepositorySummary, KeyFiles, CodeInsights,
-    FoundSecretModel, AnalysisMetadata, DependencyInfo, ThreatAssessment,
+    AnalysisReport,
+    RepositorySummary,
+    KeyFiles,
+    CodeInsights,
+    FoundSecretModel,
+    AnalysisMetadata,
+    DependencyInfo,
+    ThreatAssessment,
     ComplexFunction,
 )
 
 # ---------------------------------------------------------------------------
 # Cache helpers (existing)
+
 
 def _cache_key(file_path: Path, content_hash: str) -> str:
     """Return a cache key based on the absolute path and *content_hash*."""
@@ -69,7 +76,9 @@ def _write_cache(file_path: Path, stats: Optional[FileStats], cache_dir: Path) -
         # Caching is best-effort only – never fail the analysis because of it.
         pass
 
+
 # ----------------------- Analysis sub-routines -----------------------------
+
 
 def _run_loc_and_metrics_analysis(
     all_files: List[Path],
@@ -83,7 +92,11 @@ def _run_loc_and_metrics_analysis(
     total_function_count = 0
 
     for f in all_files:
-        stats = _stats_from_cache(f, cache_dir) if use_cache and cache_dir.exists() else None
+        stats = (
+            _stats_from_cache(f, cache_dir)
+            if use_cache and cache_dir.exists()
+            else None
+        )
 
         if stats is None:
             stats = analyze_file_stats(f)
@@ -127,6 +140,7 @@ def _run_complexity_analysis(
 # Public API
 # ---------------------------------------------------------------------------
 
+
 def run_analysis(
     path: Path,
     include_hidden: bool,
@@ -141,10 +155,17 @@ def run_analysis(
     start = time.time()
 
     # 1. Build file tree and list -----------------------------------------
-    tree = build_fs_tree(path, include_hidden=include_hidden, exclude_dirs=exclude_dirs, exclude_patterns=exclude_patterns)
+    tree = build_fs_tree(
+        path,
+        include_hidden=include_hidden,
+        exclude_dirs=exclude_dirs,
+        exclude_patterns=exclude_patterns,
+    )
     all_files = flatten_fs_tree(tree, prefix=path)
     if len(all_files) > max_files:
-        raise ValueError(f"Repository has {len(all_files)} files, exceeding limit of {max_files}.")
+        raise ValueError(
+            f"Repository has {len(all_files)} files, exceeding limit of {max_files}."
+        )
 
     # 2. Prepare cache directory ------------------------------------------
     cache_dir = path / ".codetag_cache"
@@ -169,14 +190,17 @@ def run_analysis(
         total_files=len(all_files),
         language_stats=lang_loc,
         total_lines_of_code=sum(lang_loc.values()),
-        primary_language=max(lang_loc, key=lambda k: lang_loc.get(k, 0)) if lang_loc else None,
+        primary_language=max(lang_loc, key=lambda k: lang_loc.get(k, 0))
+        if lang_loc
+        else None,
         total_functions_found=total_funcs,
-        average_cyclomatic_complexity=round(total_comp / total_funcs, 2) if total_funcs else 0.0,
+        average_cyclomatic_complexity=round(total_comp / total_funcs, 2)
+        if total_funcs
+        else 0.0,
     )
 
     code_insights = CodeInsights(
-        **todo_res,
-        top_complex_functions=all_complex_funcs[:5]
+        **todo_res, top_complex_functions=all_complex_funcs[:5]
     )
 
     threat_assessment = ThreatAssessment(
@@ -194,4 +218,4 @@ def run_analysis(
         dependency_info=DependencyInfo(dependency_files_found=deps_mapping),
         threat_assessment=threat_assessment,
     )
-    return report 
+    return report

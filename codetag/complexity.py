@@ -49,4 +49,4 @@ def analyze_complexity(file_path: Path) -> Optional[List[Dict[str, Any]]]:
                 "complexity": func.complexity,
             }
         )
-    return results or None 
+    return results or None

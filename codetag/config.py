@@ -73,6 +73,7 @@ def merge_options(
 
 # Convenience for the `scan` command ----------------------------------------
 
+
 def _split_comma_list(raw: Optional[str]) -> Optional[List[str]]:
     if raw is None:
         return None
@@ -86,13 +87,23 @@ def get_scan_exclusions(
 ) -> Dict[str, Optional[List[str]]]:
     """Return merged *exclude_dirs* and *exclude_patterns* lists for scanning."""
 
-    scan_cfg: Dict[str, Any] = config.get("scan", {}) if isinstance(config.get("scan"), dict) else {}
+    scan_cfg: Dict[str, Any] = (
+        config.get("scan", {}) if isinstance(config.get("scan"), dict) else {}
+    )
 
     dirs_from_cfg = scan_cfg.get("exclude_dirs")
     patterns_from_cfg = scan_cfg.get("exclude_patterns")
 
-    dirs_list = _split_comma_list(cli_exclude_dirs) if cli_exclude_dirs is not None else dirs_from_cfg
-    patterns_list = _split_comma_list(cli_exclude_patterns) if cli_exclude_patterns is not None else patterns_from_cfg
+    dirs_list = (
+        _split_comma_list(cli_exclude_dirs)
+        if cli_exclude_dirs is not None
+        else dirs_from_cfg
+    )
+    patterns_list = (
+        _split_comma_list(cli_exclude_patterns)
+        if cli_exclude_patterns is not None
+        else patterns_from_cfg
+    )
 
     return {"exclude_dirs": dirs_list, "exclude_patterns": patterns_list}
 
@@ -101,4 +112,4 @@ __all__ = [
     "load_config",
     "merge_options",
     "get_scan_exclusions",
-] 
+]

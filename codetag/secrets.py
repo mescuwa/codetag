@@ -4,12 +4,40 @@ from typing import List, Tuple
 
 # Common binary or large file extensions to skip for secret scanning
 BINARY_EXTENSIONS = {
-    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg",  # Images
-    ".mp3", ".wav", ".flac", ".mp4", ".mov", ".avi",            # Media
-    ".zip", ".tar", ".gz", ".rar", ".7z",                       # Archives
-    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",  # Docs
-    ".exe", ".dll", ".so", ".o", ".a", ".lib",                 # Binaries
-    ".lock", ".bin", ".dat",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".bmp",
+    ".ico",
+    ".svg",  # Images
+    ".mp3",
+    ".wav",
+    ".flac",
+    ".mp4",
+    ".mov",
+    ".avi",  # Media
+    ".zip",
+    ".tar",
+    ".gz",
+    ".rar",
+    ".7z",  # Archives
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",  # Docs
+    ".exe",
+    ".dll",
+    ".so",
+    ".o",
+    ".a",
+    ".lib",  # Binaries
+    ".lock",
+    ".bin",
+    ".dat",
 }
 
 # Do not attempt to scan files larger than 1 MB – reduces I/O overhead
@@ -39,7 +67,9 @@ SUSPICIOUS_FILENAMES: List[str] = [
 class FoundSecret(dict):
     """Dictionary describing a single potential secret finding."""
 
-    def __init__(self, file_path: str, secret_type: str, line_number: int, line_content: str):
+    def __init__(
+        self, file_path: str, secret_type: str, line_number: int, line_content: str
+    ):
         super().__init__(
             file_path=file_path,
             secret_type=secret_type,
@@ -80,7 +110,9 @@ def scan_for_secrets(file_paths: List[Path], root_path: Path) -> List[FoundSecre
         lowered_name = path.name.lower()
         for suspicious in SUSPICIOUS_FILENAMES:
             if suspicious in lowered_name:
-                findings.append(FoundSecret(rel_path, "Suspicious Filename", 1, path.name))
+                findings.append(
+                    FoundSecret(rel_path, "Suspicious Filename", 1, path.name)
+                )
                 # Break from this filename heuristic loop; still scan file contents below.
                 break
 
@@ -90,7 +122,9 @@ def scan_for_secrets(file_paths: List[Path], root_path: Path) -> List[FoundSecre
                 for lineno, line in enumerate(fp, 1):
                     for secret_name, pattern in SECRET_PATTERNS:
                         if pattern.search(line):
-                            findings.append(FoundSecret(rel_path, secret_name, lineno, line))
+                            findings.append(
+                                FoundSecret(rel_path, secret_name, lineno, line)
+                            )
                             # Optimization: if a secret is found, no need to check other patterns on the same line
                             break
         except (OSError, UnicodeDecodeError):
@@ -100,4 +134,4 @@ def scan_for_secrets(file_paths: List[Path], root_path: Path) -> List[FoundSecre
     return findings
 
 
-__all__ = ["scan_for_secrets", "FoundSecret"] 
+__all__ = ["scan_for_secrets", "FoundSecret"]

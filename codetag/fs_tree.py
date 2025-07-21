@@ -43,11 +43,7 @@ def _compile_ignore(root: Path):
 
 
 def _process_file_node(
-    file_name: str,
-    *,
-    current_dir: Path,
-    root_path: Path,
-    lfs_patterns: List[str]
+    file_name: str, *, current_dir: Path, root_path: Path, lfs_patterns: List[str]
 ) -> Optional[FsNode]:
     """Create an FsNode for a single file, including LFS checks."""
 
@@ -134,7 +130,9 @@ def flatten_fs_tree(
                 flat.append(current_path)
         elif node["type"] == "directory" and node.get("children"):
             flat.extend(
-                flatten_fs_tree(node["children"], with_meta=with_meta, prefix=current_path)  # type: ignore[arg-type]
+                flatten_fs_tree(
+                    node["children"], with_meta=with_meta, prefix=current_path
+                )  # type: ignore[arg-type]
             )
 
     return flat
@@ -192,10 +190,11 @@ def build_fs_tree(
 
         # Prune sub-directories in-place (os.walk respects the modified list)
         dirnames[:] = [
-            d for d in dirnames
+            d
+            for d in dirnames
             if d not in DEFAULT_IGNORES
             and d not in exclude_dirs_set
-            and (include_hidden or not d.startswith('.'))
+            and (include_hidden or not d.startswith("."))
             and not is_ignored(str(current_dir / d))
         ]
 
@@ -207,18 +206,26 @@ def build_fs_tree(
         for d_name in sorted(dirnames):
             dir_path = current_dir / d_name
             dir_node: FsNode = {
-                "name": d_name, "type": "directory", "size_bytes": 0,
-                "children": [], "is_lfs_pointer": False, "real_size": None
+                "name": d_name,
+                "type": "directory",
+                "size_bytes": 0,
+                "children": [],
+                "is_lfs_pointer": False,
+                "real_size": None,
             }
             parent_children.append(dir_node)
             children_map[dir_path] = dir_node["children"]  # type: ignore[index]
 
         # Process and filter files
         filtered_files = sorted(
-            f for f in filenames
-            if (include_hidden or not f.startswith('.'))
+            f
+            for f in filenames
+            if (include_hidden or not f.startswith("."))
             and not is_ignored(str(current_dir / f))
-            and not (exclude_patterns and any(fnmatch.fnmatch(f, pat) for pat in exclude_patterns))
+            and not (
+                exclude_patterns
+                and any(fnmatch.fnmatch(f, pat) for pat in exclude_patterns)
+            )
         )
 
         for f_name in filtered_files:
@@ -226,11 +233,11 @@ def build_fs_tree(
                 f_name,
                 current_dir=current_dir,
                 root_path=root_path,
-                lfs_patterns=lfs_patterns
+                lfs_patterns=lfs_patterns,
             )
             if file_node:
                 parent_children.append(file_node)
 
     # Propagate directory sizes up the tree
     _propagate_directory_sizes(root_nodes)
-    return root_nodes 
+    return root_nodes

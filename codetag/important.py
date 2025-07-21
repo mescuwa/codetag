@@ -24,14 +24,35 @@ from .fs_tree import FsNode, flatten_fs_tree
 # --- NEW: Non-source extensions to exclude when selecting largest files ---
 NON_SOURCE_EXTENSIONS = {
     # Data & models
-    ".pt", ".pth", ".bin", ".onnx", ".safetensors",
-    ".npz", ".npy", ".csv", ".json", ".parquet", ".pkl", ".joblib",
+    ".pt",
+    ".pth",
+    ".bin",
+    ".onnx",
+    ".safetensors",
+    ".npz",
+    ".npy",
+    ".csv",
+    ".json",
+    ".parquet",
+    ".pkl",
+    ".joblib",
     # Logs & dumps
-    ".log", ".txt",
+    ".log",
+    ".txt",
     # Media
-    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".mp4", ".mp3",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".ico",
+    ".mp4",
+    ".mp3",
     # Archives & docs
-    ".zip", ".gz", ".tar", ".pdf",
+    ".zip",
+    ".gz",
+    ".tar",
+    ".pdf",
 }
 
 __all__ = ["find_key_files"]
@@ -40,6 +61,7 @@ __all__ = ["find_key_files"]
 # ---------------------------------------------------------------------------
 # Rules loading
 # ---------------------------------------------------------------------------
+
 
 def load_rules(custom_path: Optional[Path] = None) -> Dict[str, List[str]]:
     """Load detection rules.
@@ -50,7 +72,11 @@ def load_rules(custom_path: Optional[Path] = None) -> Dict[str, List[str]]:
     """
 
     def _normalise(rules_dict: Dict[str, List[str]]) -> None:
-        for key in ("important_filenames", "important_suffixes", "important_substrings"):
+        for key in (
+            "important_filenames",
+            "important_suffixes",
+            "important_substrings",
+        ):
             if key in rules_dict and isinstance(rules_dict[key], list):
                 rules_dict[key] = [str(item).lower() for item in rules_dict[key]]
 
@@ -103,6 +129,7 @@ def load_rules(custom_path: Optional[Path] = None) -> Dict[str, List[str]]:
 
     return data
 
+
 # Backwards-compat alias ------------------------------------------------------
 _load_rules = load_rules
 
@@ -110,6 +137,7 @@ _load_rules = load_rules
 # ---------------------------------------------------------------------------
 # Core helper
 # ---------------------------------------------------------------------------
+
 
 def find_key_files(
     tree: List[FsNode],
@@ -134,12 +162,13 @@ def find_key_files(
 
     # ---------------- largest files (filtered to likely source code) ----------------
     source_files_only = [
-        f for f in all_files_with_meta
+        f
+        for f in all_files_with_meta
         if Path(f["path"]).suffix.lower() not in NON_SOURCE_EXTENSIONS
     ]
     source_files_only.sort(key=lambda f: f["size_bytes"], reverse=True)
     largest_files_report: List[Dict[str, Any]] = []
-    for file_info in source_files_only[:max(0, top_n)]:
+    for file_info in source_files_only[: max(0, top_n)]:
         report_item = {
             "path": file_info["path"],
             "size_bytes": file_info["size_bytes"],
@@ -164,7 +193,7 @@ def find_key_files(
             detected.add(file_info["path"])
             continue
         # Substring rule
-            
+
         for sub in important_substrings:
             if sub in name_lower:
                 detected.add(file_info["path"])
@@ -173,4 +202,4 @@ def find_key_files(
     return {
         "largest_files": largest_files_report,
         "important_files_detected": sorted(detected),
-    } 
+    }

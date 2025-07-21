@@ -57,7 +57,9 @@ def scan_for_todos(file_paths: List[Path]) -> Dict[str, int]:
         # --- Parallel Scan for large projects ---
         # Higher startup cost, but much faster for many files.
         with ProcessPoolExecutor() as executor:
-            future_to_file = {executor.submit(_scan_single_file, path): path for path in file_paths}
+            future_to_file = {
+                executor.submit(_scan_single_file, path): path for path in file_paths
+            }
 
             for future in as_completed(future_to_file):
                 try:
@@ -73,4 +75,4 @@ def scan_for_todos(file_paths: List[Path]) -> Dict[str, int]:
     }
 
 
-__all__ = ["scan_for_todos"] 
+__all__ = ["scan_for_todos"]

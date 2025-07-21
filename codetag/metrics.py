@@ -60,4 +60,4 @@ def analyze_python_file_metrics(file_path: Path) -> Optional[Dict[str, Any]]:
         "total_complexity": total_complexity,
         "halstead_volume": hs_total.volume,
         "halstead_effort": hs_total.effort,
-    } 
+    }

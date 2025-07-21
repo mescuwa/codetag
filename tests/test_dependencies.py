@@ -19,7 +19,9 @@ REQUIREMENTS_TEST_CASES = [
 
 
 @pytest.mark.parametrize("content, expected", REQUIREMENTS_TEST_CASES)
-def test_parse_requirements_txt_various(tmp_path: Path, content: str, expected: Optional[List[str]]):
+def test_parse_requirements_txt_various(
+    tmp_path: Path, content: str, expected: Optional[List[str]]
+):
     """Parameterized checks for multiple requirement file variations."""
     req_file = tmp_path / "requirements.txt"
     req_file.write_text(content)
@@ -29,4 +31,4 @@ def test_parse_requirements_txt_various(tmp_path: Path, content: str, expected: 
 def test_parse_requirements_txt_file_not_found():
     """Non-existent file path should yield None."""
     missing = Path("this/path/absolutely/does/not/exist.txt")
-    assert parse_requirements_txt(missing) is None 
+    assert parse_requirements_txt(missing) is None
