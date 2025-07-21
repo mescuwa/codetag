@@ -1,6 +1,5 @@
 # FILE: codetag/cli.py
 
-import time
 import os
 from pathlib import Path
 from typing import Optional
