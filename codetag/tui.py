@@ -126,8 +126,8 @@ def _open_native_directory_picker() -> Optional[Path]:
         ).run()
         return None
     try:
-        import tkinter as tk  # noqa: WPS433
-        from tkinter import filedialog as tk_fd  # noqa: WPS433
+        import tkinter as tk  # noqa
+        from tkinter import filedialog as tk_fd  # noqa
 
         root = tk.Tk()
         root.withdraw()

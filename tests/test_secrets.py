@@ -1,4 +1,3 @@
-import pytest
 from pathlib import Path
 
 from codetag.secrets import scan_for_secrets
