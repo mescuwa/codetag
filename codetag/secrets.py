@@ -97,7 +97,7 @@ def scan_for_secrets(file_paths: List[Path], root_path: Path) -> List[FoundSecre
         # Skip files residing in excluded directories (e.g., tests, virtual envs)
         if any(part in DEFAULT_SECRET_EXCLUSIONS for part in path.parts):
             continue
-        
+
         # -------- quick filters to avoid heavy I/O -----------------------
         # 1. Skip obvious binary files by extension
         if path.suffix.lower() in BINARY_EXTENSIONS:
