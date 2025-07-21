@@ -19,4 +19,4 @@ def test_scan_for_secrets(tmp_path: Path) -> None:
 
     assert "AWS Access Key" in types
     assert "Generic API Key" in types
-    assert "GitHub Token" in types 
+    assert "GitHub Token" in types
