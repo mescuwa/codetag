@@ -78,11 +78,16 @@ class _StructureDistiller(ast.NodeTransformer):
         return hashlib.sha256(segment.encode()).hexdigest()
 
     def _strip(self, node: ast.AST):  # noqa: D401 – simple helper
+        # Compute checksum before mutating body to preserve lineno attributes.
+        body_hash = self._hash_body(node)
+
         # Replace implementation with a single `pass`
         node.body = [ast.Pass()]  # type: ignore[attr-defined]
+
         if not self._include_anchors:
             return node
-        anchor = ast.Expr(value=ast.Constant(value=f"body-sha256: {self._hash_body(node)}"))
+
+        anchor = ast.Expr(value=ast.Constant(value=f"body-sha256: {body_hash}"))
         return [anchor, node]
 
     # ------------------------------------------------------------------

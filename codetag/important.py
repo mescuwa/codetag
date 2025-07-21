@@ -56,12 +56,31 @@ def load_rules(custom_path: Optional[Path] = None) -> Dict[str, List[str]]:
                 rules_dict[key] = [str(item).lower() for item in rules_dict[key]]
 
     # 1. Bundled defaults -----------------------------------------------------
-    try:
-        from importlib.resources import files  # type: ignore
+    # Importlib compatibility: Python <3.9 lacks `importlib.resources.files`.
+    import importlib
 
-        default_text = files(__package__).joinpath("rules.yaml").read_text("utf-8")
-        data: Dict[str, List[str]] = yaml.safe_load(default_text) or {}
-    except (ImportError, FileNotFoundError, yaml.YAMLError):
+    _files = None  # function reference placeholder
+
+    # Try stdlib first (Python ≥3.9) without triggering static linters
+    try:
+        _files = importlib.import_module("importlib.resources").files  # type: ignore[attr-defined]
+    except (ModuleNotFoundError, AttributeError):
+        # Fallback to back-port for 3.8 / 3.7, if installed.
+        try:
+            _files = importlib.import_module("importlib_resources").files  # type: ignore[attr-defined]
+        except (ModuleNotFoundError, AttributeError):
+            _files = None  # type: ignore
+
+    data: Dict[str, List[str]]
+    if _files is not None:
+        try:
+            default_text = _files(__package__).joinpath("rules.yaml").read_text("utf-8")
+            data = yaml.safe_load(default_text) or {}
+        except (FileNotFoundError, yaml.YAMLError, AttributeError):
+            # AttributeError catches the case where the back-port exists but the
+            # function does not behave as expected.
+            data = {}
+    else:
         data = {}
 
     _normalise(data)

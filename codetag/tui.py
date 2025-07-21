@@ -34,6 +34,7 @@ from prompt_toolkit.shortcuts import (
 )
 from prompt_toolkit.styles import Style
 from prompt_toolkit.validation import ValidationError, Validator
+import inspect
 
 # ---------------------------------------------------------------------------
 # Globals & config
@@ -193,15 +194,76 @@ def _get_output_path(history: Dict[str, str], step_prefix: str, default_name: st
 # ---------------------------------------------------------------------------
 
 def _echo_command(cmd: str, args: Dict[str, Any]) -> None:
+    """Generate an accurate shell command reflecting the current CLI definition."""
+    from typer.models import ArgumentInfo, OptionInfo  # type: ignore
+    from . import cli  # local import to avoid circular issues
+
+    # Resolve the callback function for the given CLI command name.
+    func = None
+    if hasattr(cli, cmd):
+        func = getattr(cli, cmd)  # type: ignore[attr-defined]
+    else:
+        for cinfo in getattr(cli.app, "registered_commands", []):
+            if cinfo.name == cmd or cinfo.callback.__name__ == cmd:
+                func = cinfo.callback
+                break
+
     parts: list[str] = ["codetag", cmd]
-    for key, val in args.items():
-        if val in (None, False):
-            continue
-        flag = f"--{key.replace('_', '-') }"
-        if val is True:
-            parts.append(flag)
-        else:
-            parts.extend([flag, f'"{val}"'])
+
+    if func is None:
+        # Fallback to naive behaviour.
+        for key, val in args.items():
+            if val in (None, False):
+                continue
+            flag = f"--{key.replace('_', '-')}"
+            if val is True:
+                parts.append(flag)
+            else:
+                parts.extend([flag, f'"{val}"'])
+    else:
+        import inspect as _ins
+        sig = _ins.signature(func)
+        for name, param in sig.parameters.items():
+            if name not in args:
+                continue
+            val = args[name]
+            if val in (None, False):
+                continue
+
+            default = param.default
+            if isinstance(default, ArgumentInfo):
+                parts.append(f'"{val}"')
+                continue
+
+            if isinstance(default, OptionInfo):
+                long_opt = None
+                if default.param_decls:
+                    long_opt = next((d for d in default.param_decls if d.startswith("--")), default.param_decls[0])
+                if long_opt is None:
+                    long_opt = f"--{name.replace('_', '-')}"
+
+                if isinstance(val, bool):
+                    all_decls: list[str] = []
+                    for decl in default.param_decls:
+                        if "/" in decl:
+                            all_decls.extend(decl.split("/"))
+                        else:
+                            all_decls.append(decl)
+                    positive = next((d for d in all_decls if d.startswith("--") and not d.startswith("--no-")), None)
+                    negative = next((d for d in all_decls if d.startswith("--no-")), None)
+                    chosen = positive if val else (negative or positive)
+                    if chosen:
+                        parts.append(chosen)
+                else:
+                    parts.extend([long_opt, f'"{val}"'])
+                continue
+
+            flag = f"--{name.replace('_', '-')}"
+            if val is True:
+                parts.append(flag)
+            else:
+                parts.extend([flag, f'"{val}"'])
+
     console.print("\n[bold green]Equivalent Scriptable Command:[/bold green]")
     console.print(Syntax(" ".join(parts), "bash", theme="monokai", word_wrap=True))
     console.print()
@@ -326,6 +388,7 @@ def _run_distill_flow(history: Dict[str, str]) -> None:
 
 def _run_audit_flow(history: Dict[str, str]) -> None:
     from .cli import audit
+    import typer
 
     repo = _choose_directory("Step 2 – Select Repository", "last_repo", history)
     if not repo:
@@ -342,8 +405,14 @@ def _run_audit_flow(history: Dict[str, str]) -> None:
         return
 
     args = {"path": repo, "strict": "strict" in strict_choice}
-    _run_with_progress("Auditing repository…", audit, **args)
-    console.print(Panel("[bold green]✔ Audit complete.[/bold green]", padding=1))
+    try:
+        _run_with_progress("Auditing repository…", audit, **args)
+        console.print(Panel("[bold green]✔ Audit complete: No issues found.[/bold green]", padding=1))
+    except typer.Exit as exc:
+        if exc.exit_code == 1:
+            console.print(Panel("[bold yellow]⚠ Audit finished: Potential issues found.[/bold yellow]", padding=1))
+        else:
+            raise
     _echo_command("audit", args)
 
 # ---------------------------------------------------------------------------

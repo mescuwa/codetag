@@ -16,6 +16,8 @@ from .fs_tree import FsNode, build_fs_tree
 # distill_level helpers are now encapsulated in distiller.distill_repository
 from .packer import pack_repository
 from .auditor import audit_repository
+from rich.table import Table
+from rich.console import Console
 from .config import load_config, get_scan_exclusions
 from .tui import run_tui
 from .distiller import distill_repository
@@ -198,6 +200,41 @@ def audit(
 ):
     """Audit a project for threats using OSV-Scanner and Semgrep."""
     assessment = audit_repository(path, strict_semgrep=strict)
+
+    console = Console(stderr=True)
+
+    if assessment.dependency_vulnerabilities:
+        tbl = Table(title="Dependency Vulnerabilities", show_lines=True)
+        tbl.add_column("ID", style="bold red")
+        tbl.add_column("Package")
+        tbl.add_column("Version")
+        tbl.add_column("Severity", justify="center")
+        tbl.add_column("Summary")
+        for v in assessment.dependency_vulnerabilities:
+            tbl.add_row(v.id, v.package_name, v.vulnerable_version, v.severity or "?", v.summary[:60] + ("…" if len(v.summary) > 60 else ""))
+        console.print(tbl)
+
+    if assessment.code_vulnerabilities:
+        tbl = Table(title="Code Vulnerabilities", show_lines=True)
+        tbl.add_column("Check ID", style="bold red")
+        tbl.add_column("File")
+        tbl.add_column("Line", justify="right")
+        tbl.add_column("Severity", justify="center")
+        tbl.add_column("Message")
+        for v in assessment.code_vulnerabilities:
+            tbl.add_row(v.check_id, v.path, str(v.line), v.severity, v.message[:60] + ("…" if len(v.message) > 60 else ""))
+        console.print(tbl)
+
+    if assessment.secrets_found:
+        tbl = Table(title="Potential Secrets", show_lines=True)
+        tbl.add_column("File")
+        tbl.add_column("Line", justify="right")
+        tbl.add_column("Type")
+        tbl.add_column("Snippet")
+        for s in assessment.secrets_found:
+            tbl.add_row(s.file_path, str(s.line_number), s.secret_type, s.line_content)
+        console.print(tbl)
+
     has_findings = bool(
         assessment.dependency_vulnerabilities
         or assessment.code_vulnerabilities
