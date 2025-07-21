@@ -119,8 +119,15 @@ def _run_osv_scanner(path: Path) -> List[DependencyVulnerability]:
     except FileNotFoundError:
         typer.echo("⚠️  'osv-scanner' not installed. Skipping dependency scan.", err=True)
         return []
+    except subprocess.CalledProcessError as exc:
+        typer.echo(f"⚠️  OSV-Scanner failed with exit code {exc.returncode}.", err=True)
+        typer.echo(f"⚠️  Stderr: {exc.stderr.strip()}", err=True)
+        return []
+    except json.JSONDecodeError:
+        typer.echo("⚠️  OSV-Scanner produced invalid JSON output.", err=True)
+        return []
     except Exception as exc:
-        typer.echo(f"⚠️  OSV-Scanner failed: {exc}", err=True)
+        typer.echo(f"⚠️  OSV-Scanner unexpected error: {exc}", err=True)
         return []
 
 
@@ -154,6 +161,13 @@ def _run_semgrep(path: Path, strict: bool) -> List[CodeVulnerability]:
     except FileNotFoundError:
         typer.echo("⚠️  'semgrep' not installed. Skipping SAST scan.", err=True)
         return []
+    except subprocess.CalledProcessError as exc:
+        typer.echo(f"⚠️  Semgrep scan failed with exit code {exc.returncode}.", err=True)
+        typer.echo(f"⚠️  Stderr: {exc.stderr.strip()}", err=True)
+        return []
+    except json.JSONDecodeError:
+        typer.echo("⚠️  Semgrep produced invalid JSON output.", err=True)
+        return []
     except Exception as exc:
-        typer.echo(f"⚠️  Semgrep scan failed: {exc}", err=True)
+        typer.echo(f"⚠️  Semgrep unexpected error: {exc}", err=True)
         return [] 

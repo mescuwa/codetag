@@ -70,6 +70,39 @@ source venv/bin/activate  # Windows: .\venv\Scripts\activate
 pip install -e ".[audit,dev]"
 ```
 
+For a full guide on workflow, coding standards, and how to submit a pull
+request, please see **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+
+---
+
+## Configuration
+
+CodeTag can load project-specific defaults from a `.codetag.yaml` file located
+in the root of your repository.  Any value passed on the command line always
+overrides the configuration file.
+
+```yaml
+# .codetag.yaml — example
+
+# Exclude build artefacts and large data files during *scan*
+scan:
+  exclude_dirs:
+    - build
+    - dist
+    - .venv
+    - data/
+  exclude_patterns:
+    - "*.log"
+    - "*.tmp"
+    - "*.pkl"
+
+# Increase the default token budget for *pack*
+pack:
+  max_tokens: 150000
+```
+
+Keep the file in version control so your whole team shares the same defaults.
+
 ---
 
 ## Advanced Usage – CLI Reference

@@ -153,10 +153,24 @@ def build_fs_tree(
 ) -> List[FsNode]:
     """Return a nested directory tree rooted at *root_path*.
 
-    *include_hidden* controls whether dot‐prefixed files/dirs are considered.
-    The implementation prunes ignored directories **before** `os.walk` descends
-    into them so we never pay the cost of scanning large folders like
-    *node_modules*.
+    This helper walks the file system starting from ``root_path`` and builds a
+    JSON-serialisable tree of files and directories.  It honours ``.gitignore``
+    rules and prunes ignored folders before traversing them for maximal speed.
+
+    Args:
+        root_path: Absolute or relative directory to scan.
+        include_hidden: Whether to include dot-prefixed files & directories.
+        exclude_dirs: Extra directory names to skip regardless of gitignore.
+        exclude_patterns: Glob patterns of files to exclude (e.g. ``*.log``).
+
+    Returns:
+        A list of ``FsNode`` dictionaries representing the immediate children
+        of ``root_path``.  Each directory node recursively contains its own
+        ``children`` key.
+
+    Raises:
+        FileNotFoundError: If *root_path* does not exist.
+        NotADirectoryError: If *root_path* is not a directory.
     """
 
     root_path = Path(root_path).resolve()
