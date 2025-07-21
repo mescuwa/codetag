@@ -24,7 +24,6 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
-from rich.syntax import Syntax
 from prompt_toolkit.completion import PathCompleter
 from prompt_toolkit.shortcuts import (
     checkboxlist_dialog,
@@ -57,7 +56,12 @@ TUI_STYLE = Style.from_dict(
         "button.focused": "bg:#007777 #ffffff",
         "checkbox": "#00ff00",
         "radio": "#00ff00",
-        "input-field": "#000000",
+        # Better contrast for input boxes
+        "input-field": "bg:#ffffff #000000",  # Black text on white background
+        "dialog.body input-field": "bg:#ffffff #000000",  # Ensure overrides body fg
+        # Cover additional internal classes used by prompt_toolkit's TextArea
+        "text-area": "bg:#ffffff #000000",
+        "dialog.body text-area": "bg:#ffffff #000000",
     }
 )
 
@@ -182,7 +186,12 @@ def _choose_directory(
 def _get_output_path(
     history: Dict[str, str], step_prefix: str, default_name: str, ext: str
 ) -> Optional[Path]:
-    """Two-step flow: pick directory, then filename."""
+    """Two-step flow: pick directory, then filename.
+
+    Persists BOTH the last-used directory and the last-used filename
+    (keyed by *default_name*) so subsequent sessions pre-populate
+    with the user's previous choice.
+    """
     dir_path = _choose_directory(
         f"{step_prefix} – Select Output Directory", "last_output_dir", history
     )
@@ -192,15 +201,22 @@ def _get_output_path(
     # store history immediately so filename dialog default can use it next time
     history["last_output_dir"] = str(dir_path)
 
+    # --- New: filename history support ---
+    filename_key = f"last_filename_{default_name}"
+    default_filename = history.get(filename_key, default_name)
+
     filename = input_dialog(
         title=f"{step_prefix} – Enter Filename",
         text=f"Enter the filename (.{ext} will be added automatically):",
-        default=default_name,
+        default=default_filename,
         validator=NonEmptyValidator(),
         style=TUI_STYLE,
     ).run()
     if not filename:
         return None
+
+    # Remember filename for next time
+    history[filename_key] = filename.strip()
 
     return dir_path / f"{filename.strip()}.{ext}"
 
@@ -215,10 +231,11 @@ def _echo_command(parts: list[str]) -> None:
     import shlex
 
     quoted_parts = [shlex.quote(str(p)) for p in parts]
+    command_line = " ".join(quoted_parts)
+
     console.print("\n[bold green]Equivalent Scriptable Command:[/bold green]")
-    console.print(
-        Syntax(" ".join(quoted_parts), "bash", theme="monokai", word_wrap=True)
-    )
+    # Print on a single line without forced wrapping.
+    console.print(command_line, style="cyan", no_wrap=True)
     console.print()
 
 
@@ -285,12 +302,12 @@ def _select_main_action() -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
-def _run_scan_flow(history: Dict[str, str]) -> None:
+def _run_scan_flow(history: Dict[str, str]) -> str | None:
     from .cli import scan_repository
 
     repo = _choose_directory("Step 2 – Select Repository", "last_repo", history)
     if not repo:
-        return
+        return None
     history["last_repo"] = str(repo)
 
     args = {
@@ -306,6 +323,9 @@ def _run_scan_flow(history: Dict[str, str]) -> None:
     console.print(Panel("[bold green]✔ Scan complete.[/bold green]", padding=1))
     _echo_command(_build_cli_parts("scan", args))
 
+    # After printing potentially large JSON, exit back to terminal
+    return "exit"
+
 
 # ---------------------------------------------------------------------------
 # PACK
@@ -320,7 +340,8 @@ def _run_pack_flow(history: Dict[str, str]) -> None:
         return
     history["last_repo"] = str(repo)
 
-    output = _get_output_path(history, "Step 3/3", "packed_code", "txt")
+    default_base = f"{repo.name}_packed"
+    output = _get_output_path(history, "Step 3/3", default_base, "txt")
     if not output:
         return
 
@@ -364,7 +385,8 @@ def _run_distill_flow(history: Dict[str, str]) -> None:
     if not level:
         return
 
-    output = _get_output_path(history, "Step 4/4", "distilled", "txt")
+    default_base = f"{repo.name}_distill_level_{level}"
+    output = _get_output_path(history, "Step 4/4", default_base, "txt")
     if not output:
         return
 
@@ -389,12 +411,12 @@ def _run_distill_flow(history: Dict[str, str]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _run_audit_flow(history: Dict[str, str]) -> None:
+def _run_audit_flow(history: Dict[str, str]) -> str | None:
     from .cli import audit
 
     repo = _choose_directory("Step 2 – Select Repository", "last_repo", history)
     if not repo:
-        return
+        return None
     history["last_repo"] = str(repo)
 
     strict_choice = checkboxlist_dialog(
@@ -404,7 +426,7 @@ def _run_audit_flow(history: Dict[str, str]) -> None:
         style=TUI_STYLE,
     ).run()
     if strict_choice is None:
-        return
+        return None
 
     args = {"path": repo, "strict": "strict" in strict_choice}
     try:
@@ -426,6 +448,9 @@ def _run_audit_flow(history: Dict[str, str]) -> None:
             raise
     _echo_command(_build_cli_parts("audit", args))
 
+    # Exit after audit so user can review warnings in terminal
+    return "exit"
+
 
 # ---------------------------------------------------------------------------
 # Launcher
@@ -433,6 +458,7 @@ def _run_audit_flow(history: Dict[str, str]) -> None:
 
 
 def run_tui() -> None:  # pragma: no cover
+    """Run the interactive Rich TUI in a loop until the user exits."""
     from . import __version__
 
     console.print(
@@ -447,18 +473,32 @@ def run_tui() -> None:  # pragma: no cover
 
     history = _load_history()
 
+    flows = {
+        "scan": _run_scan_flow,
+        "pack": _run_pack_flow,
+        "distill": _run_distill_flow,
+        "audit": _run_audit_flow,
+    }
+
     try:
-        action = _select_main_action()
-        flows = {
-            "scan": _run_scan_flow,
-            "pack": _run_pack_flow,
-            "distill": _run_distill_flow,
-            "audit": _run_audit_flow,
-        }
-        if action in flows:
-            flows[action](history)
-        else:
-            console.print("[dim]Goodbye![/dim]")
+        while True:
+            action = _select_main_action()
+            if action is None:
+                console.print("[dim]Goodbye![/dim]")
+                break
+
+            flow_func = flows.get(action)
+            if flow_func is None:
+                console.print("[red]Unknown action selected.[/red]")
+                continue
+
+            result = flow_func(history)
+
+            # Some flows (scan, audit) signal that the app should exit so the
+            # user can review long terminal output without the TUI capturing
+            # further input.
+            if result == "exit":
+                break
     except Exception as err:  # noqa: BLE001
         message_dialog(
             title="Fatal Error",

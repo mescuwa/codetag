@@ -89,7 +89,11 @@ def scan_repository(
         False, "-i", "--include-hidden", help="Include hidden files and directories."
     ),
     output_file: Optional[Path] = typer.Option(
-        None, "-o", "--output", help="Save the JSON report to a file instead of stdout."
+        None,
+        "-o",
+        "--output",
+        "--output-file",
+        help="Save the JSON report to a file instead of stdout.",
     ),
     rules: Optional[Path] = typer.Option(
         None,
@@ -173,7 +177,11 @@ def pack(
         ..., exists=True, resolve_path=True, help="Directory to pack."
     ),
     output_file: Path = typer.Option(
-        "packed_code.txt", "-o", "--output", help="Path to save the packed text file."
+        "packed_code.txt",
+        "-o",
+        "--output",
+        "--output-file",
+        help="Path to save the packed text file.",
     ),
     max_file_size_kb: int = typer.Option(
         100, help="Maximum size (in KB) of a single file to include."
