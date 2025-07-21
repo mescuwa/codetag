@@ -47,7 +47,7 @@ codetag = "codetag.cli:app"
 
 [project.optional-dependencies]
 audit = ["osv-scanner", "semgrep"]
-dev = ["pytest", "pytest-cov"]
+dev = ["pytest", "pytest-cov", "ruff"]
 
 [tool.setuptools.packages.find]
 where = ["."]
