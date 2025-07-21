@@ -36,7 +36,7 @@ from .models import (
 )
 
 # ---------------------------------------------------------------------------
-# Cache helpers (existing)
+# Cache helpers (extended)
 
 
 def _cache_key(file_path: Path, content_hash: str) -> str:
@@ -45,35 +45,58 @@ def _cache_key(file_path: Path, content_hash: str) -> str:
     return hashlib.sha256(f"{file_path}:{content_hash}".encode()).hexdigest()
 
 
-def _stats_from_cache(file_path: Path, cache_dir: Path) -> Optional[FileStats]:
-    """Return cached FileStats if an entry for the *current file content* exists."""
+def _stats_from_cache(
+    file_path: Path, cache_dir: Path
+) -> Tuple[Optional[FileStats], Optional[Dict[str, Any]]]:
+    """Return cached (FileStats, py_metrics) if an entry for *current file content* exists."""
+
     try:
-        # Read content to compute its hash first
+        # Compute content hash for key
         content = file_path.read_text("utf-8", errors="ignore")
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         cache_file = cache_dir / f"{_cache_key(file_path, content_hash)}.json"
 
         if not cache_file.exists():
-            return None
+            return None, None
 
         data = json.loads(cache_file.read_text("utf-8"))
-        return FileStats(**data) if data else None
+
+        # Backwards compatibility: older cache stored plain FileStats dict
+        if "file_stats" in data:
+            file_stats_data = data.get("file_stats")
+            py_metrics = data.get("py_metrics")
+        else:
+            # Legacy format: entire data is FileStats
+            file_stats_data = data
+            py_metrics = None
+
+        stats = FileStats(**file_stats_data) if file_stats_data else None
+        return stats, py_metrics
     except Exception:
-        # Any issues (file unreadable, JSON error, etc.) -> treat as cache miss
-        return None
+        # Treat any error as cache miss
+        return None, None
 
 
-def _write_cache(file_path: Path, stats: Optional[FileStats], cache_dir: Path) -> None:
-    """Persist *stats* to disk using a key derived from its content hash."""
+def _write_cache(
+    file_path: Path,
+    stats: Optional[FileStats],
+    py_metrics: Optional[Dict[str, Any]],
+    cache_dir: Path,
+) -> None:
+    """Persist *stats* and *py_metrics* to disk using a key derived from content hash."""
+
     if not stats or not getattr(stats, "content_hash", None):
         return
+
     try:
         cache_file = cache_dir / f"{_cache_key(file_path, stats.content_hash)}.json"
-        # Avoid redundant writes (possible when parallel processes analyse the same file)
-        if not cache_file.exists():
-            cache_file.write_text(json.dumps(stats._asdict()), encoding="utf-8")
+        if cache_file.exists():
+            return  # avoid redundant writes
+
+        payload = {"file_stats": stats._asdict(), "py_metrics": py_metrics}
+        cache_file.write_text(json.dumps(payload), encoding="utf-8")
     except Exception:
-        # Caching is best-effort only – never fail the analysis because of it.
+        # Best-effort only
         pass
 
 
@@ -92,23 +115,35 @@ def _run_loc_and_metrics_analysis(
     total_function_count = 0
 
     for f in all_files:
-        stats = (
-            _stats_from_cache(f, cache_dir)
-            if use_cache and cache_dir.exists()
-            else None
+        if use_cache and cache_dir.exists():
+            cached_stats, cached_py_metrics = _stats_from_cache(f, cache_dir)
+        else:
+            cached_stats, cached_py_metrics = None, None
+
+        stats = cached_stats or analyze_file_stats(f)
+
+        py_metrics = (
+            cached_py_metrics
+            if cached_py_metrics is not None
+            else analyze_python_file_metrics(f)
         )
 
-        if stats is None:
-            stats = analyze_file_stats(f)
-            if use_cache and cache_dir.exists() and stats:
-                _write_cache(f, stats, cache_dir)
+        # Update language LOC aggregation
         if stats:
             lang_loc[stats.language] = lang_loc.get(stats.language, 0) + stats.code
 
-        py_metrics = analyze_python_file_metrics(f)
+        # Aggregate metrics if available
         if py_metrics:
-            total_function_count += py_metrics["function_count"]
-            total_complexity_sum += py_metrics["total_complexity"]
+            total_function_count += py_metrics.get("function_count", 0)
+            total_complexity_sum += py_metrics.get("total_complexity", 0.0)
+
+        # Write to cache if needed (only when newly computed)
+        if (
+            use_cache
+            and cache_dir.exists()
+            and (cached_stats is None or cached_py_metrics is None)
+        ):
+            _write_cache(f, stats, py_metrics, cache_dir)
 
     return lang_loc, total_function_count, total_complexity_sum
 

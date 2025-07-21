@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 from typing import List, Tuple
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Common binary or large file extensions to skip for secret scanning
 BINARY_EXTENSIONS = {
@@ -42,6 +43,9 @@ BINARY_EXTENSIONS = {
 
 # Do not attempt to scan files larger than 1 MB – reduces I/O overhead
 MAX_SECRET_FILE_SIZE = 1_000_000  # bytes (≈1 MB)
+
+# --- NEW: Threshold for switching to parallel processing ---
+PARALLEL_THRESHOLD = 50  # Use sequential scan below this number of files
 
 # Directories that commonly contain non-production or irrelevant files which
 # should be ignored during secret scanning to reduce false positives.
@@ -88,62 +92,84 @@ class FoundSecret(dict):
         )
 
 
+# --- NEW: Helper for scanning a single file (enables multiprocessing) ---
+
+
+def _scan_single_file(path: Path, root_path: Path) -> List[FoundSecret]:
+    """Scan *path* for secrets and return a list of FoundSecret objects."""
+    findings: List[FoundSecret] = []
+
+    # Skip files residing in excluded directories (e.g., tests, virtual envs)
+    if any(part in DEFAULT_SECRET_EXCLUSIONS for part in path.parts):
+        return findings
+
+    # Skip obvious binary files by extension
+    if path.suffix.lower() in BINARY_EXTENSIONS:
+        return findings
+
+    # Skip the scanner's own implementation file to avoid self-detection false positives
+    if path.name == "secrets.py":
+        return findings
+
+    # Skip very large files
+    try:
+        if path.stat().st_size > MAX_SECRET_FILE_SIZE:
+            return findings
+    except OSError:
+        return findings
+
+    try:
+        rel_path = str(path.relative_to(root_path))
+    except ValueError:
+        rel_path = str(path)
+
+    # -------- filename heuristics -------------------------------------
+    lowered_name = path.name.lower()
+    for suspicious in SUSPICIOUS_FILENAMES:
+        if suspicious in lowered_name:
+            findings.append(FoundSecret(rel_path, "Suspicious Filename", 1, path.name))
+            break  # Filename heuristic satisfied; still scan contents.
+
+    # -------- content regex scanning ----------------------------------
+    try:
+        with path.open("r", encoding="utf-8", errors="ignore") as fp:
+            for lineno, line in enumerate(fp, 1):
+                for secret_name, pattern in SECRET_PATTERNS:
+                    if pattern.search(line):
+                        findings.append(
+                            FoundSecret(rel_path, secret_name, lineno, line)
+                        )
+                        # Removed early break to allow detecting multiple secrets per line
+    except (OSError, UnicodeDecodeError):
+        # Skip unreadable files; treat as no findings.
+        return findings
+
+    return findings
+
+
 def scan_for_secrets(file_paths: List[Path], root_path: Path) -> List[FoundSecret]:
     """Return a list of *FoundSecret* for any secrets detected in *file_paths*."""
 
     findings: List[FoundSecret] = []
 
-    for path in file_paths:
-        # Skip files residing in excluded directories (e.g., tests, virtual envs)
-        if any(part in DEFAULT_SECRET_EXCLUSIONS for part in path.parts):
-            continue
-
-        # -------- quick filters to avoid heavy I/O -----------------------
-        # 1. Skip obvious binary files by extension
-        if path.suffix.lower() in BINARY_EXTENSIONS:
-            continue
-
-        # 2. Skip the scanner's own implementation file to avoid self-detection false positives
-        if path.name == "secrets.py":
-            continue
-
-        # 3. Skip very large files
-        try:
-            if path.stat().st_size > MAX_SECRET_FILE_SIZE:
-                continue
-        except OSError:
-            # Unable to stat file; skip
-            continue
-
-        try:
-            rel_path = str(path.relative_to(root_path))
-        except ValueError:
-            rel_path = str(path)
-
-        # -------- filename heuristics -------------------------------------
-        lowered_name = path.name.lower()
-        for suspicious in SUSPICIOUS_FILENAMES:
-            if suspicious in lowered_name:
-                findings.append(
-                    FoundSecret(rel_path, "Suspicious Filename", 1, path.name)
-                )
-                # Break from this filename heuristic loop; still scan file contents below.
-                break
-
-        # -------- content regex scanning ----------------------------------
-        try:
-            with path.open("r", encoding="utf-8", errors="ignore") as fp:
-                for lineno, line in enumerate(fp, 1):
-                    for secret_name, pattern in SECRET_PATTERNS:
-                        if pattern.search(line):
-                            findings.append(
-                                FoundSecret(rel_path, secret_name, lineno, line)
-                            )
-                            # Optimization: if a secret is found, no need to check other patterns on the same line
-                            break
-        except (OSError, UnicodeDecodeError):
-            # Skip unreadable files; treat as no findings.
-            continue
+    num_files = len(file_paths)
+    if num_files < PARALLEL_THRESHOLD:
+        # Sequential execution
+        for path in file_paths:
+            findings.extend(_scan_single_file(path, root_path))
+    else:
+        # Parallel execution using a process pool for better CPU utilisation
+        with ProcessPoolExecutor() as executor:
+            future_to_path = {
+                executor.submit(_scan_single_file, path, root_path): path
+                for path in file_paths
+            }
+            for future in as_completed(future_to_path):
+                try:
+                    findings.extend(future.result())
+                except Exception:
+                    # Silently ignore worker failures (e.g. pickle errors)
+                    pass
 
     return findings
 

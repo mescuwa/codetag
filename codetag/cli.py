@@ -109,6 +109,11 @@ def scan_repository(
         "--exclude-patterns",
         help="Comma-separated list of glob patterns for files to exclude.",
     ),
+    max_files: int = typer.Option(
+        int(os.getenv("CODETAG_MAX_FILES", "5000")),
+        "--max-files",
+        help="Set a hard limit on the number of files to analyze to prevent hangs on huge repos.",
+    ),
 ):
     """Analyze a repository and create a comprehensive JSON report."""
     # timer removed (variable unused)
@@ -117,14 +122,13 @@ def scan_repository(
     config = load_config(path)
     exclusions = get_scan_exclusions(config, exclude_dirs, exclude_patterns)
 
-    MAX_FILES = int(os.getenv("CODETAG_MAX_FILES", "5000"))
     try:
         from .analyzer import run_analysis
 
         report = run_analysis(
             path,
             include_hidden,
-            MAX_FILES,
+            max_files,
             rules_path=rules,
             use_cache=not no_cache,
             exclude_dirs=exclusions["exclude_dirs"],
