@@ -13,9 +13,8 @@ files in the repository.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple, Optional
+from typing import Any, Dict, List, Set, Optional
 
 import yaml
 

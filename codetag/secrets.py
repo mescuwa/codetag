@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 
 # Common binary or large file extensions to skip for secret scanning
 BINARY_EXTENSIONS = {

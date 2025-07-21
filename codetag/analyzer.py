@@ -15,7 +15,7 @@ import json
 import hashlib
 
 # In-package imports
-from .fs_tree import build_fs_tree, FsNode, flatten_fs_tree
+from .fs_tree import build_fs_tree, flatten_fs_tree
 from .language_stats import analyze_file_stats, FileStats
 from .todos import scan_for_todos
 from .important import find_key_files

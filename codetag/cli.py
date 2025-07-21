@@ -1,18 +1,14 @@
 # FILE: codetag/cli.py
 
-import json
 import time
 import os
 from pathlib import Path
-from typing import List, Dict, Optional, Any, Set, Tuple
+from typing import Optional
 
 import typer
-from pydantic import BaseModel, Field
-from .models import AnalysisReport  # Centralized data models
 from . import __version__  # Canonical package version
 
 # --- In-package imports ---
-from .fs_tree import FsNode, build_fs_tree
 # distill_level helpers are now encapsulated in distiller.distill_repository
 from .packer import pack_repository
 from .auditor import audit_repository
@@ -91,7 +87,7 @@ def scan_repository(
     exclude_patterns: Optional[str] = typer.Option(None, "--exclude-patterns", help="Comma-separated list of glob patterns for files to exclude."),
 ):
     """Analyze a repository and create a comprehensive JSON report."""
-    start = time.time()
+    # timer removed (variable unused)
     typer.echo(f"🔍 Analyzing repository at: {path}", err=True)
 
     config = load_config(path)

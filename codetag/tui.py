@@ -34,7 +34,6 @@ from prompt_toolkit.shortcuts import (
 )
 from prompt_toolkit.styles import Style
 from prompt_toolkit.validation import ValidationError, Validator
-import inspect
 
 # ---------------------------------------------------------------------------
 # Globals & config
@@ -388,7 +387,6 @@ def _run_distill_flow(history: Dict[str, str]) -> None:
 
 def _run_audit_flow(history: Dict[str, str]) -> None:
     from .cli import audit
-    import typer
 
     repo = _choose_directory("Step 2 – Select Repository", "last_repo", history)
     if not repo:

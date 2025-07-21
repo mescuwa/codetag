@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import List
 
 import typer
-from pydantic import BaseModel, Field
 
 # Internal helpers -----------------------------------------------------------
 from .fs_tree import build_fs_tree, flatten_fs_tree
